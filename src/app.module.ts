@@ -2,9 +2,8 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
-import { FirebaseModule } from './firebase/firebase.module';
-import { UserModule } from './users/user.module';
-
+import { FirebaseModule } from '@firebase/firebase.module';
+import { UserModule } from '@users/user.module';
 import { Category } from './entities/category.entity';
 import { Expense } from './entities/expense.entity';
 import { MonthlyIncome } from './entities/monthly-income.entity';

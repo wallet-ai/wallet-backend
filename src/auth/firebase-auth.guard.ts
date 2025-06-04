@@ -1,10 +1,10 @@
+import { FirebaseService } from '@firebase/firebase.service';
 import {
   CanActivate,
   ExecutionContext,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
-import { FirebaseService } from '../firebase/firebase.service';
 import { Request } from 'express';
 
 @Injectable()
