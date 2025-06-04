@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import * as admin from 'firebase-admin';
 import * as dotenv from 'dotenv';
-import serviceAccount from '../../firebase-service-account.json';
+import admin from 'firebase-admin';
+const serviceAccount = require('../../firebase-service-account.json');
 
 dotenv.config();
 

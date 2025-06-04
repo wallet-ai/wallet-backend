@@ -8,6 +8,7 @@
     "resolveJsonModule": true,
     "strict": true,
     "experimentalDecorators": true,
+    "allowSyntheticDefaultImports": true,
     "emitDecoratorMetadata": true,
     "strictPropertyInitialization": false,
     "baseUrl": "src",

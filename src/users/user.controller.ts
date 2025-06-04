@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { UpdateUserDto } from '@users/dtos/update-user.dto';
 import { UserService } from '@users/user.service';
-import * as admin from 'firebase-admin';
+import admin from 'firebase-admin';
 import { DecodedIdToken } from 'firebase-admin/lib/auth/token-verifier';
 
 @Controller('users')
