@@ -1,0 +1,32 @@
+import { Column, Entity, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
+import { Expense } from './expense.entity';
+import { MonthlyIncome } from './monthly-income.entity';
+import { RecurringIncome } from './recurring-income.entity';
+import { UserIncomeAllocation } from './user-income-allocation.entity';
+
+@Entity()
+export class User {
+  @PrimaryGeneratedColumn()
+  id: number;
+
+  @Column({ unique: true })
+  firebase_uuid: string;
+
+  @Column({ length: 50 })
+  name: string;
+
+  @Column({ length: 50 })
+  email: string;
+
+  @OneToMany(() => RecurringIncome, (ri) => ri.user)
+  recurringIncomes: RecurringIncome[];
+
+  @OneToMany(() => MonthlyIncome, (mi) => mi.user)
+  monthlyIncomes: MonthlyIncome[];
+
+  @OneToMany(() => UserIncomeAllocation, (uia) => uia.user)
+  incomeAllocations: UserIncomeAllocation[];
+
+  @OneToMany(() => Expense, (expense) => expense.user)
+  expenses: Expense[];
+}
