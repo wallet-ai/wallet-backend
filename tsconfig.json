@@ -9,7 +9,15 @@
     "strict": true,
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
-    "strictPropertyInitialization": false
+    "strictPropertyInitialization": false,
+    "baseUrl": "src",
+    "paths": {
+      "@entities/*": ["entities/*"],
+      "@users/*": ["users/*"],
+      "@auth/*": ["auth/*"],
+      "@firebase/*": ["firebase/*"],
+      "@common/*": ["common/*"]
+    }
   },
   "include": ["src/**/*"]
 }

@@ -1,5 +1,5 @@
+import { User } from '@entities/user.entity';
 import { Column, Entity, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
-import { User } from './user.entity';
 
 @Entity()
 export class RecurringIncome {

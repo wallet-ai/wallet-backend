@@ -3,7 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { FirebaseModule } from './firebase/firebase.module';
-import { UsersModule } from './users/users.module';
+import { UserModule } from './users/user.module';
 
 import { Category } from './entities/category.entity';
 import { Expense } from './entities/expense.entity';
@@ -40,7 +40,7 @@ import { User } from './entities/user.entity';
       inject: [ConfigService],
     }),
     FirebaseModule,
-    UsersModule,
+    UserModule,
   ],
   controllers: [],
   providers: [],

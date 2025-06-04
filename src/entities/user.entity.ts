@@ -1,8 +1,8 @@
+import { Expense } from '@entities/expense.entity';
+import { MonthlyIncome } from '@entities/monthly-income.entity';
+import { RecurringIncome } from '@entities/recurring-income.entity';
+import { UserIncomeAllocation } from '@entities/user-income-allocation.entity';
 import { Column, Entity, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
-import { Expense } from './expense.entity';
-import { MonthlyIncome } from './monthly-income.entity';
-import { RecurringIncome } from './recurring-income.entity';
-import { UserIncomeAllocation } from './user-income-allocation.entity';
 
 @Entity()
 export class User {
