@@ -2,14 +2,14 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { Category } from '@entities/category.entity';
+import { Expense } from '@entities/expense.entity';
+import { MonthlyIncome } from '@entities/monthly-income.entity';
+import { RecurringIncome } from '@entities/recurring-income.entity';
+import { UserIncomeAllocation } from '@entities/user-income-allocation.entity';
+import { User } from '@entities/user.entity';
 import { FirebaseModule } from '@firebase/firebase.module';
 import { UserModule } from '@users/user.module';
-import { Category } from './entities/category.entity';
-import { Expense } from './entities/expense.entity';
-import { MonthlyIncome } from './entities/monthly-income.entity';
-import { RecurringIncome } from './entities/recurring-income.entity';
-import { UserIncomeAllocation } from './entities/user-income-allocation.entity';
-import { User } from './entities/user.entity';
 
 @Module({
   imports: [
