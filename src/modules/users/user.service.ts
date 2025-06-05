@@ -56,10 +56,6 @@ export class UserService {
     return this.userRepository.save(user);
   }
 
-  async remove(id: number): Promise<void> {
-    await this.userRepository.delete(id);
-  }
-
   async removeByFirebaseUid(firebaseUid: string): Promise<void> {
     await this.userRepository.delete({ firebase_uuid: firebaseUid });
   }

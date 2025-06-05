@@ -5,14 +5,18 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
-import { Request } from 'express';
+import { UserService } from '@users/user.service';
+import { RequestWithUser } from 'types/request-with-user';
 
 @Injectable()
 export class FirebaseAuthGuard implements CanActivate {
-  constructor(private firebaseService: FirebaseService) {}
+  constructor(
+    private firebaseService: FirebaseService,
+    private userService: UserService, // 👈 injeta o service
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const req = context.switchToHttp().getRequest<Request>();
+    const req = context.switchToHttp().getRequest<RequestWithUser>();
     const authHeader = req.headers.authorization;
 
     if (!authHeader?.startsWith('Bearer ')) {
@@ -20,9 +24,16 @@ export class FirebaseAuthGuard implements CanActivate {
     }
 
     const token = authHeader.split('Bearer ')[1];
+
     try {
       const decoded = await this.firebaseService.verifyToken(token);
+
+      const userEntity =
+        await this.userService.findOrCreateFromFirebase(decoded);
+
       req['user'] = decoded;
+      req['userEntity'] = userEntity;
+
       return true;
     } catch (err) {
       throw new UnauthorizedException('Token inválido');

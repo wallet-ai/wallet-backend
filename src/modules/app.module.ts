@@ -10,6 +10,8 @@ import { UserIncomeAllocation } from '@entities/user-income-allocation.entity';
 import { User } from '@entities/user.entity';
 import { FirebaseModule } from '@firebase/firebase.module';
 import { UserModule } from '@users/user.module';
+import { MonthlyIncomeModule } from 'modules/monthly-income/monthly-income.module';
+import { RecurringIncomeModule } from 'modules/recurring-income/recurring-income.module';
 
 @Module({
   imports: [
@@ -40,6 +42,8 @@ import { UserModule } from '@users/user.module';
     }),
     FirebaseModule,
     UserModule,
+    MonthlyIncomeModule,
+    RecurringIncomeModule,
   ],
   controllers: [],
   providers: [],
