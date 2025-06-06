@@ -1,6 +1,6 @@
 import { Income } from '@entities/income.entity';
 import { FirebaseModule } from '@modules/firebase/firebase.module';
-import { IncomeService } from '@modules/income/incomme.service';
+import { IncomeService } from '@modules/income/income.service';
 import { UserModule } from '@modules/users/user.module';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';

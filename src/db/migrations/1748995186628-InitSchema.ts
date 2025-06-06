@@ -4,7 +4,6 @@ export class InitSchema1748995186628 implements MigrationInterface {
   name = 'InitSchema1748995186628';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    // Nova tabela unificada
     await queryRunner.query(`
             CREATE TABLE "income" (
                 "id" SERIAL NOT NULL,

@@ -7,6 +7,7 @@ import { Expense } from '@entities/expense.entity';
 import { Income } from '@entities/income.entity';
 import { UserIncomeAllocation } from '@entities/user-income-allocation.entity';
 import { User } from '@entities/user.entity';
+import { ExpenseModule } from '@modules/expenses/expense.module';
 import { FirebaseModule } from '@modules/firebase/firebase.module';
 import { UserModule } from '@modules/users/user.module';
 import { IncomeModule } from 'modules/income/income.module';
@@ -52,6 +53,7 @@ import { LoggerModule } from 'nestjs-pino';
     FirebaseModule,
     UserModule,
     IncomeModule,
+    ExpenseModule,
   ],
   controllers: [],
   providers: [],

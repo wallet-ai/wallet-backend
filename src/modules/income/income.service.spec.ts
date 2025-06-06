@@ -1,6 +1,6 @@
 import { Income } from '@entities/income.entity';
 import { User } from '@entities/user.entity';
-import { IncomeService } from '@modules/income/incomme.service';
+import { IncomeService } from '@modules/income/income.service';
 import { NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
