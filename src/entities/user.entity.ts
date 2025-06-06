@@ -1,6 +1,5 @@
 import { Expense } from '@entities/expense.entity';
-import { MonthlyIncome } from '@entities/monthly-income.entity';
-import { RecurringIncome } from '@entities/recurring-income.entity';
+import { Income } from '@entities/income.entity';
 import { UserIncomeAllocation } from '@entities/user-income-allocation.entity';
 import { Column, Entity, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
 
@@ -18,11 +17,8 @@ export class User {
   @Column({ length: 50 })
   email: string;
 
-  @OneToMany(() => RecurringIncome, (ri) => ri.user)
-  recurringIncomes: RecurringIncome[];
-
-  @OneToMany(() => MonthlyIncome, (mi) => mi.user)
-  monthlyIncomes: MonthlyIncome[];
+  @OneToMany(() => Income, (i) => i.user)
+  incomes: Income[];
 
   @OneToMany(() => UserIncomeAllocation, (uia) => uia.user)
   incomeAllocations: UserIncomeAllocation[];

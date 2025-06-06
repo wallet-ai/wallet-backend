@@ -14,9 +14,8 @@
     "baseUrl": "src",
     "paths": {
       "@entities/*": ["entities/*"],
-      "@users/*": ["modules/users/*"],
       "@auth/*": ["auth/*"],
-      "@firebase/*": ["modules/firebase/*"],
+      "@modules/*": ["modules/*"],
       "@common/*": ["common/*"]
     }
   },

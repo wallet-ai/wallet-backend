@@ -1,5 +1,7 @@
 import { UserAuth } from '@auth/auth.decorator';
 import { FirebaseAuthGuard } from '@auth/firebase-auth.guard';
+import { UpdateUserDto } from '@modules/users/dtos/update-user.dto';
+import { UserService } from '@modules/users/user.service';
 import {
   Body,
   Controller,
@@ -8,8 +10,6 @@ import {
   Patch,
   UseGuards,
 } from '@nestjs/common';
-import { UpdateUserDto } from '@users/dtos/update-user.dto';
-import { UserService } from '@users/user.service';
 import admin from 'firebase-admin';
 import { DecodedIdToken } from 'firebase-admin/lib/auth/token-verifier';
 

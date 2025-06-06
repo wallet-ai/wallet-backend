@@ -4,14 +4,13 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { Category } from '@entities/category.entity';
 import { Expense } from '@entities/expense.entity';
-import { MonthlyIncome } from '@entities/monthly-income.entity';
-import { RecurringIncome } from '@entities/recurring-income.entity';
+import { Income } from '@entities/income.entity';
 import { UserIncomeAllocation } from '@entities/user-income-allocation.entity';
 import { User } from '@entities/user.entity';
-import { FirebaseModule } from '@firebase/firebase.module';
-import { UserModule } from '@users/user.module';
-import { MonthlyIncomeModule } from 'modules/monthly-income/monthly-income.module';
-import { RecurringIncomeModule } from 'modules/recurring-income/recurring-income.module';
+import { FirebaseModule } from '@modules/firebase/firebase.module';
+import { UserModule } from '@modules/users/user.module';
+import { IncomeModule } from 'modules/income/income.module';
+import { LoggerModule } from 'nestjs-pino';
 
 @Module({
   imports: [
@@ -19,7 +18,24 @@ import { RecurringIncomeModule } from 'modules/recurring-income/recurring-income
       isGlobal: true,
     }),
     TypeOrmModule.forRootAsync({
-      imports: [ConfigModule],
+      imports: [
+        LoggerModule.forRoot({
+          pinoHttp: {
+            transport:
+              process.env.NODE_ENV !== 'production'
+                ? {
+                    target: 'pino-pretty',
+                    options: {
+                      colorize: true,
+                      translateTime: 'HH:MM:ss',
+                      ignore: 'pid,hostname',
+                    },
+                  }
+                : undefined,
+          },
+        }),
+        ConfigModule,
+      ],
       useFactory: (config: ConfigService) => ({
         type: 'postgres',
         host: config.get('DB_HOST'),
@@ -27,14 +43,7 @@ import { RecurringIncomeModule } from 'modules/recurring-income/recurring-income
         username: config.get('DB_USERNAME'),
         password: config.get('DB_PASSWORD'),
         database: config.get('DB_NAME'),
-        entities: [
-          User,
-          Expense,
-          Category,
-          RecurringIncome,
-          MonthlyIncome,
-          UserIncomeAllocation,
-        ],
+        entities: [User, Expense, Category, Income, UserIncomeAllocation],
         synchronize: false,
         autoLoadEntities: true,
       }),
@@ -42,8 +51,7 @@ import { RecurringIncomeModule } from 'modules/recurring-income/recurring-income
     }),
     FirebaseModule,
     UserModule,
-    MonthlyIncomeModule,
-    RecurringIncomeModule,
+    IncomeModule,
   ],
   controllers: [],
   providers: [],

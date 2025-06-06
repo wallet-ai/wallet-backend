@@ -1,9 +1,9 @@
 import { User } from '@entities/user.entity';
-import { FirebaseModule } from '@firebase/firebase.module';
+import { FirebaseModule } from '@modules/firebase/firebase.module';
+import { UserController } from '@modules/users/user.controller';
+import { UserService } from '@modules/users/user.service';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { UserController } from '@users/user.controller';
-import { UserService } from '@users/user.service';
 
 @Module({
   imports: [TypeOrmModule.forFeature([User]), FirebaseModule],
