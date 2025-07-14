@@ -9,6 +9,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Logger } from 'nestjs-pino';
 import { Repository } from 'typeorm';
 import { CreateIncomeDto } from './dtos/create-income.dto';
+import { UpdateIncomeDto } from './dtos/update-income.dto';
 
 @Injectable()
 export class IncomeService {
@@ -53,6 +54,34 @@ export class IncomeService {
       this.logger.error('Erro ao remover renda', { error: err });
       if (err instanceof NotFoundException) throw err;
       throw new InternalServerErrorException('Erro ao remover renda.');
+    }
+  }
+
+  async update(id: number, dto: UpdateIncomeDto, user: User) {
+    try {
+      const income = await this.repo.findOne({
+        where: { id, user: { id: user.id } },
+      });
+
+      if (!income) {
+        throw new NotFoundException('Renda não encontrada.');
+      }
+
+      // Atualizar apenas os campos fornecidos
+      Object.assign(income, dto);
+
+      return await this.repo.save(income);
+    } catch (err) {
+      this.logger.error('Erro ao atualizar renda', {
+        error: err,
+        incomeId: id,
+      });
+
+      if (err instanceof NotFoundException) {
+        throw err;
+      }
+
+      throw new InternalServerErrorException('Erro ao atualizar renda.');
     }
   }
 }

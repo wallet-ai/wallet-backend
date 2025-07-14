@@ -10,6 +10,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Logger } from 'nestjs-pino';
 import { Repository } from 'typeorm';
 import { CreateExpenseDto } from './dtos/create-expense.dto';
+import { UpdateExpenseDto } from './dtos/update-expense.dto';
 
 @Injectable()
 export class ExpenseService {
@@ -86,6 +87,41 @@ export class ExpenseService {
         error: err,
       });
       throw new InternalServerErrorException('Erro ao agrupar despesas.');
+    }
+  }
+
+  async update(id: number, dto: UpdateExpenseDto, user: User) {
+    try {
+      const expense = await this.repo.findOne({
+        where: { id, user: { id: user.id } },
+        relations: ['category'],
+      });
+
+      if (!expense) {
+        throw new NotFoundException('Despesa não encontrada.');
+      }
+
+      // Se a categoria foi alterada, validar se existe
+      if (dto.categoryId && dto.categoryId !== expense.category.id) {
+        const category = await this.categoryService.findById(dto.categoryId);
+        expense.category = category;
+      }
+
+      // Atualizar apenas os campos fornecidos
+      Object.assign(expense, dto);
+
+      return await this.repo.save(expense);
+    } catch (err) {
+      this.logger.error('Erro ao atualizar despesa', {
+        error: err,
+        expenseId: id,
+      });
+
+      if (err instanceof NotFoundException) {
+        throw err;
+      }
+
+      throw new InternalServerErrorException('Erro ao atualizar despesa.');
     }
   }
 }

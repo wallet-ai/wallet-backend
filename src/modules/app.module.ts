@@ -1,16 +1,17 @@
-import { Module } from '@nestjs/common';
-import { ConfigModule, ConfigService } from '@nestjs/config';
-import { TypeOrmModule } from '@nestjs/typeorm';
-
 import { Category } from '@entities/category.entity';
 import { Expense } from '@entities/expense.entity';
 import { Income } from '@entities/income.entity';
 import { UserIncomeAllocation } from '@entities/user-income-allocation.entity';
 import { User } from '@entities/user.entity';
+import { CategoryModule } from '@modules/categories/category.module';
 import { ExpenseModule } from '@modules/expenses/expense.module';
 import { FirebaseModule } from '@modules/firebase/firebase.module';
+import { HealthModule } from '@modules/health/health.module';
+import { IncomeModule } from '@modules/incomes/income.module';
 import { UserModule } from '@modules/users/user.module';
-import { IncomeModule } from 'modules/income/income.module';
+import { Module } from '@nestjs/common';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { LoggerModule } from 'nestjs-pino';
 
 @Module({
@@ -51,9 +52,11 @@ import { LoggerModule } from 'nestjs-pino';
       inject: [ConfigService],
     }),
     FirebaseModule,
+    HealthModule,
     UserModule,
     IncomeModule,
     ExpenseModule,
+    CategoryModule,
   ],
   controllers: [],
   providers: [],
