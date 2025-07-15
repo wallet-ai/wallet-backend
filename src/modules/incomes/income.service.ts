@@ -1,3 +1,4 @@
+import { DateFilterDto } from '@common/dtos/date-filter.dto';
 import { Income } from '@entities/income.entity';
 import { User } from '@entities/user.entity';
 import {
@@ -46,13 +47,24 @@ export class IncomeService {
     }
   }
 
-  async findAllByUser(user: User) {
+  async findAllByUser(user: User, filters?: DateFilterDto) {
     try {
-      return await this.repo.find({
-        where: { user: { id: user.id } },
-        relations: ['category'],
-        order: { startDate: 'DESC' },
-      });
+      const queryBuilder = this.repo
+        .createQueryBuilder('income')
+        .leftJoinAndSelect('income.category', 'category')
+        .where('income.userId = :userId', { userId: user.id });
+
+      // Aplicar filtros de data se fornecidos
+      filters?.month !== undefined &&
+        queryBuilder.andWhere('EXTRACT(MONTH FROM income.startDate) = :month', {
+          month: filters.month + 1,
+        });
+      filters?.year !== undefined &&
+        queryBuilder.andWhere('EXTRACT(YEAR FROM income.startDate) = :year', {
+          year: filters.year,
+        });
+
+      return await queryBuilder.orderBy('income.startDate', 'DESC').getMany();
     } catch (err) {
       this.logger.error('Erro ao buscar rendas', { error: err });
       throw new InternalServerErrorException('Erro ao buscar rendas.');

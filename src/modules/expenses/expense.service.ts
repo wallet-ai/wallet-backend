@@ -1,3 +1,4 @@
+import { DateFilterDto } from '@common/dtos/date-filter.dto';
 import { Expense } from '@entities/expense.entity';
 import { User } from '@entities/user.entity';
 import { CategoryService } from '@modules/categories/category.service';
@@ -36,12 +37,24 @@ export class ExpenseService {
     }
   }
 
-  async findAllByUser(user: User) {
+  async findAllByUser(user: User, filters?: DateFilterDto) {
     try {
-      return await this.repo.find({
-        where: { user: { id: user.id } },
-        relations: ['category'],
-      });
+      const queryBuilder = this.repo
+        .createQueryBuilder('expense')
+        .leftJoinAndSelect('expense.category', 'category')
+        .where('expense.userId = :userId', { userId: user.id });
+
+      // Aplicar filtros de data se fornecidos
+      filters?.month !== undefined &&
+        queryBuilder.andWhere('EXTRACT(MONTH FROM expense.date) = :month', {
+          month: filters.month + 1,
+        });
+      filters?.year !== undefined &&
+        queryBuilder.andWhere('EXTRACT(YEAR FROM expense.date) = :year', {
+          year: filters.year,
+        });
+
+      return await queryBuilder.orderBy('expense.date', 'DESC').getMany();
     } catch (err) {
       this.logger.error('Erro ao buscar despesas', { error: err });
       throw new InternalServerErrorException('Erro ao buscar despesas.');
@@ -66,14 +79,35 @@ export class ExpenseService {
     }
   }
 
-  async getTotalByCategory(user: User) {
+  async getTotalByCategory(user: User, filters?: DateFilterDto) {
     try {
-      const result = await this.repo
+      const queryBuilder = this.repo
         .createQueryBuilder('expense')
         .leftJoin('expense.category', 'category')
         .select('category.name', 'category')
         .addSelect('SUM(expense.amount)', 'total')
-        .where('expense.userId = :userId', { userId: user.id })
+        .where('expense.userId = :userId', { userId: user.id });
+
+      // Aplicar filtros de data se fornecidos
+      if (filters?.month && filters?.year) {
+        queryBuilder
+          .andWhere('EXTRACT(MONTH FROM expense.date) = :month', {
+            month: filters.month,
+          })
+          .andWhere('EXTRACT(YEAR FROM expense.date) = :year', {
+            year: filters.year,
+          });
+      } else if (filters?.month) {
+        queryBuilder.andWhere('EXTRACT(MONTH FROM expense.date) = :month', {
+          month: filters.month,
+        });
+      } else if (filters?.year) {
+        queryBuilder.andWhere('EXTRACT(YEAR FROM expense.date) = :year', {
+          year: filters.year,
+        });
+      }
+
+      const result = await queryBuilder
         .groupBy('category.name')
         .orderBy('total', 'DESC')
         .getRawMany();

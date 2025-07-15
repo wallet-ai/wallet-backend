@@ -1,5 +1,6 @@
 import { AuthenticatedUser } from '@auth/auth-user.decorator';
 import { FirebaseAuthGuard } from '@auth/firebase-auth.guard';
+import { DateFilterDto } from '@common/dtos/date-filter.dto';
 import { User } from '@entities/user.entity';
 import { CreateExpenseDto } from '@modules/expenses/dtos/create-expense.dto';
 import {
@@ -19,12 +20,14 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
   ApiParam,
+  ApiQuery,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
@@ -57,6 +60,18 @@ export class ExpenseController {
 
   @Get()
   @ApiOperation({ summary: 'Get all expenses for the authenticated user' })
+  @ApiQuery({
+    name: 'month',
+    required: false,
+    description: 'Month to filter (0-11)',
+    example: 5,
+  })
+  @ApiQuery({
+    name: 'year',
+    required: false,
+    description: 'Year to filter',
+    example: 2025,
+  })
   @ApiResponse({
     status: HttpStatus.OK,
     description: 'List of expenses retrieved successfully',
@@ -66,12 +81,24 @@ export class ExpenseController {
     status: HttpStatus.UNAUTHORIZED,
     description: 'Unauthorized - Invalid or missing token',
   })
-  findAll(@AuthenticatedUser() user: User) {
-    return this.service.findAllByUser(user);
+  findAll(@Query() filters: DateFilterDto, @AuthenticatedUser() user: User) {
+    return this.service.findAllByUser(user, filters);
   }
 
   @Get('/categories')
   @ApiOperation({ summary: 'Get expenses grouped by category' })
+  @ApiQuery({
+    name: 'month',
+    required: false,
+    description: 'Month to filter (1-12)',
+    example: 5,
+  })
+  @ApiQuery({
+    name: 'year',
+    required: false,
+    description: 'Year to filter',
+    example: 2025,
+  })
   @ApiResponse({
     status: HttpStatus.OK,
     description: 'Expenses grouped by category retrieved successfully',
@@ -81,8 +108,11 @@ export class ExpenseController {
     status: HttpStatus.UNAUTHORIZED,
     description: 'Unauthorized - Invalid or missing token',
   })
-  findAllByCategory(@AuthenticatedUser() user: User) {
-    return this.service.getTotalByCategory(user);
+  findAllByCategory(
+    @Query() filters: DateFilterDto,
+    @AuthenticatedUser() user: User,
+  ) {
+    return this.service.getTotalByCategory(user, filters);
   }
 
   @Patch(':id')

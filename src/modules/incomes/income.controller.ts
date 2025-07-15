@@ -1,5 +1,6 @@
 import { AuthenticatedUser } from '@auth/auth-user.decorator';
 import { FirebaseAuthGuard } from '@auth/firebase-auth.guard';
+import { DateFilterDto } from '@common/dtos/date-filter.dto';
 import { User } from '@entities/user.entity';
 import { CreateIncomeDto } from '@modules/incomes/dtos/create-income.dto';
 import { IncomeResponseDto } from '@modules/incomes/dtos/income-response.dto';
@@ -16,12 +17,14 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
   ApiParam,
+  ApiQuery,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
@@ -54,6 +57,18 @@ export class IncomeController {
 
   @Get()
   @ApiOperation({ summary: 'Get all incomes for the authenticated user' })
+  @ApiQuery({
+    name: 'month',
+    required: false,
+    description: 'Month to filter (0-11)',
+    example: 5,
+  })
+  @ApiQuery({
+    name: 'year',
+    required: false,
+    description: 'Year to filter',
+    example: 2025,
+  })
   @ApiResponse({
     status: HttpStatus.OK,
     description: 'List of incomes retrieved successfully',
@@ -63,8 +78,8 @@ export class IncomeController {
     status: HttpStatus.UNAUTHORIZED,
     description: 'Unauthorized - Invalid or missing token',
   })
-  findAll(@AuthenticatedUser() user: User) {
-    return this.service.findAllByUser(user);
+  findAll(@Query() filters: DateFilterDto, @AuthenticatedUser() user: User) {
+    return this.service.findAllByUser(user, filters);
   }
 
   @Patch(':id')
