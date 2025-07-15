@@ -39,4 +39,12 @@ export class CreateIncomeDto {
   @IsOptional()
   @IsDateString()
   endDate?: string;
+
+  @ApiProperty({
+    description: 'Category ID',
+    example: 1,
+  })
+  @IsNumber()
+  @IsPositive()
+  categoryId: number;
 }

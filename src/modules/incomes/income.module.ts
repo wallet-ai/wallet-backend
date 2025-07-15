@@ -1,4 +1,5 @@
 import { Income } from '@entities/income.entity';
+import { CategoryModule } from '@modules/categories/category.module';
 import { FirebaseModule } from '@modules/firebase/firebase.module';
 import { IncomeService } from '@modules/incomes/income.service';
 import { UserModule } from '@modules/users/user.module';
@@ -7,7 +8,12 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { IncomeController } from 'modules/incomes/income.controller';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Income]), UserModule, FirebaseModule],
+  imports: [
+    TypeOrmModule.forFeature([Income]),
+    UserModule,
+    FirebaseModule,
+    CategoryModule,
+  ],
   controllers: [IncomeController],
   providers: [IncomeService],
 })

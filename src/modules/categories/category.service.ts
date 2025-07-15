@@ -7,6 +7,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Logger } from 'nestjs-pino';
 import { Repository } from 'typeorm';
+import { CategoryTypeEnum } from 'types/enums/category-type.enum';
 
 @Injectable()
 export class CategoryService {
@@ -16,12 +17,16 @@ export class CategoryService {
     private readonly logger: Logger,
   ) {}
 
-  async findAll() {
+  async findAll(type?: CategoryTypeEnum) {
     try {
-      return await this.repo.find();
+      const whereCondition = type ? { type } : {};
+      return await this.repo.find({
+        where: whereCondition,
+        order: { name: 'ASC' },
+      });
     } catch (err) {
       this.logger.error('Erro ao buscar categorias', { error: err });
-      throw new InternalServerErrorException('Erro ao buscar rendas.');
+      throw new InternalServerErrorException('Erro ao buscar categorias.');
     }
   }
 

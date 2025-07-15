@@ -54,6 +54,7 @@ export class InitSchema1748995186628 implements MigrationInterface {
             CREATE TABLE "category" (
                 "id" SERIAL NOT NULL,
                 "name" character varying NOT NULL,
+                "type" character varying NOT NULL,
                 CONSTRAINT "PK_9c4e4a89e3674fc9f382d733f03" PRIMARY KEY ("id")
             )
         `);

@@ -1,9 +1,9 @@
 // src/db/data-source.ts
-import { Income } from '@entities/income.entity';
 import 'dotenv/config';
 import { DataSource } from 'typeorm';
 import { Category } from '../entities/category.entity';
 import { Expense } from '../entities/expense.entity';
+import { Income } from '../entities/income.entity';
 import { UserIncomeAllocation } from '../entities/user-income-allocation.entity';
 import { User } from '../entities/user.entity';
 

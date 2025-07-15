@@ -17,6 +17,7 @@ export class UserService {
     const existingUser = await this.userRepository.findOne({
       where: { firebase_uuid: decoded.uid },
     });
+    console.log('Existing User', existingUser);
 
     if (existingUser) {
       return existingUser;

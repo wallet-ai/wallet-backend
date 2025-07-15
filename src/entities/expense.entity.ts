@@ -1,6 +1,6 @@
-import { Category } from '@entities/category.entity';
-import { User } from '@entities/user.entity';
 import { Column, Entity, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
+import { Category } from './category.entity';
+import { User } from './user.entity';
 
 @Entity()
 export class Expense {

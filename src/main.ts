@@ -71,10 +71,10 @@ async function bootstrap() {
 
   const logger = app.get(Logger);
   logger.log(
-    `🚀 Application is running on: http://localhost:${process.env.PORT ?? 3001}`,
+    `Application is running on: http://localhost:${process.env.PORT ?? 3001}`,
   );
   logger.log(
-    `📚 Swagger docs available at: http://localhost:${process.env.PORT ?? 3001}/api/docs`,
+    `Swagger docs available at: http://localhost:${process.env.PORT ?? 3001}/api/docs`,
   );
 }
 bootstrap();

@@ -1,7 +1,7 @@
-import { Expense } from '@entities/expense.entity';
-import { Income } from '@entities/income.entity';
-import { UserIncomeAllocation } from '@entities/user-income-allocation.entity';
 import { Column, Entity, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
+import { Expense } from './expense.entity';
+import { Income } from './income.entity';
+import { UserIncomeAllocation } from './user-income-allocation.entity';
 
 @Entity()
 export class User {
