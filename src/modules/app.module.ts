@@ -8,6 +8,7 @@ import { ExpenseModule } from '@modules/expenses/expense.module';
 import { FirebaseModule } from '@modules/firebase/firebase.module';
 import { HealthModule } from '@modules/health/health.module';
 import { IncomeModule } from '@modules/incomes/income.module';
+import { SummaryModule } from '@modules/summary/summary.module';
 import { UserModule } from '@modules/users/user.module';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
@@ -57,6 +58,7 @@ import { LoggerModule } from 'nestjs-pino';
     IncomeModule,
     ExpenseModule,
     CategoryModule,
+    SummaryModule,
   ],
   controllers: [],
   providers: [],
