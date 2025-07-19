@@ -636,4 +636,363 @@ export class SummaryService {
       );
     }
   }
+
+  async getYearlyEvolutionData(user: User, year: number) {
+    try {
+      // Buscar evolução de receitas mensais
+      const monthlyIncomes = await this.incomeRepo
+        .createQueryBuilder('income')
+        .select([
+          'EXTRACT(MONTH FROM income.startDate) as month',
+          'COALESCE(SUM(income.amount), 0) as total',
+          'COUNT(income.id) as count',
+          'COALESCE(AVG(income.amount), 0) as average',
+        ])
+        .where('income.userId = :userId', { userId: user.id })
+        .andWhere('EXTRACT(YEAR FROM income.startDate) = :year', { year })
+        .groupBy('EXTRACT(MONTH FROM income.startDate)')
+        .orderBy('month', 'ASC')
+        .getRawMany();
+
+      // Buscar evolução de despesas mensais
+      const monthlyExpenses = await this.expenseRepo
+        .createQueryBuilder('expense')
+        .select([
+          'EXTRACT(MONTH FROM expense.date) as month',
+          'COALESCE(SUM(expense.amount), 0) as total',
+          'COUNT(expense.id) as count',
+          'COALESCE(AVG(expense.amount), 0) as average',
+        ])
+        .where('expense.userId = :userId', { userId: user.id })
+        .andWhere('EXTRACT(YEAR FROM expense.date) = :year', { year })
+        .groupBy('EXTRACT(MONTH FROM expense.date)')
+        .orderBy('month', 'ASC')
+        .getRawMany();
+
+      return { monthlyIncomes, monthlyExpenses };
+    } catch (err) {
+      this.logger.error('Erro ao buscar dados de evolução anual', {
+        error: err,
+        userId: user.id,
+        year,
+      });
+      throw new InternalServerErrorException(
+        'Erro ao buscar dados de evolução anual.',
+      );
+    }
+  }
+
+  async exportYearlyEvolutionToExcel(
+    user: User,
+    year: number,
+  ): Promise<Buffer> {
+    try {
+      const { monthlyIncomes, monthlyExpenses } =
+        await this.getYearlyEvolutionData(user, year);
+
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = 'Wallet App';
+      workbook.created = new Date();
+
+      // Criar mapas para facilitar acesso aos dados
+      const incomesMap = new Map();
+      const expensesMap = new Map();
+
+      monthlyIncomes.forEach((item) => {
+        incomesMap.set(parseInt(item.month), {
+          total: parseFloat(item.total),
+          count: parseInt(item.count),
+          average: parseFloat(item.average),
+        });
+      });
+
+      monthlyExpenses.forEach((item) => {
+        expensesMap.set(parseInt(item.month), {
+          total: parseFloat(item.total),
+          count: parseInt(item.count),
+          average: parseFloat(item.average),
+        });
+      });
+
+      // Aba de Evolução Geral
+      const evolutionSheet = workbook.addWorksheet('Evolução Anual');
+      evolutionSheet.columns = [
+        { header: 'Mês', key: 'month', width: 15 },
+        { header: 'Receitas (R$)', key: 'incomes', width: 18 },
+        { header: 'Despesas (R$)', key: 'expenses', width: 18 },
+        { header: 'Saldo (R$)', key: 'balance', width: 18 },
+        { header: 'Variação Receitas (%)', key: 'incomeVariation', width: 20 },
+        { header: 'Variação Despesas (%)', key: 'expenseVariation', width: 20 },
+      ];
+
+      // Estilo do cabeçalho
+      const evolutionHeaderRow = evolutionSheet.getRow(1);
+      for (let col = 1; col <= 6; col++) {
+        const cell = evolutionHeaderRow.getCell(col);
+        cell.font = { bold: true };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FF2196F3' },
+        };
+        cell.alignment = { horizontal: 'center' };
+      }
+
+      const monthNames = [
+        'Janeiro',
+        'Fevereiro',
+        'Março',
+        'Abril',
+        'Maio',
+        'Junho',
+        'Julho',
+        'Agosto',
+        'Setembro',
+        'Outubro',
+        'Novembro',
+        'Dezembro',
+      ];
+
+      let previousIncomes = 0;
+      let previousExpenses = 0;
+
+      // Adicionar dados mensais
+      for (let month = 1; month <= 12; month++) {
+        const incomeData = incomesMap.get(month) || {
+          total: 0,
+          count: 0,
+          average: 0,
+        };
+        const expenseData = expensesMap.get(month) || {
+          total: 0,
+          count: 0,
+          average: 0,
+        };
+
+        const currentIncomes = incomeData.total;
+        const currentExpenses = expenseData.total;
+        const balance = currentIncomes - currentExpenses;
+
+        // Calcular variações percentuais
+        const incomeVariation =
+          previousIncomes > 0
+            ? ((currentIncomes - previousIncomes) / previousIncomes) * 100
+            : 0;
+        const expenseVariation =
+          previousExpenses > 0
+            ? ((currentExpenses - previousExpenses) / previousExpenses) * 100
+            : 0;
+
+        const row = evolutionSheet.addRow({
+          month: monthNames[month - 1],
+          incomes: currentIncomes,
+          expenses: currentExpenses,
+          balance: balance,
+          incomeVariation: month === 1 ? 0 : incomeVariation,
+          expenseVariation: month === 1 ? 0 : expenseVariation,
+        });
+
+        // Colorir saldo baseado no valor
+        const balanceCell = row.getCell(4);
+        balanceCell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: balance >= 0 ? 'FFE8F5E8' : 'FFFDE8E8' },
+        };
+
+        // Colorir variações
+        if (month > 1) {
+          const incomeVariationCell = row.getCell(5);
+          incomeVariationCell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: incomeVariation >= 0 ? 'FFE8F5E8' : 'FFFDE8E8' },
+          };
+
+          const expenseVariationCell = row.getCell(6);
+          expenseVariationCell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: expenseVariation <= 0 ? 'FFE8F5E8' : 'FFFDE8E8' },
+          };
+        }
+
+        previousIncomes = currentIncomes;
+        previousExpenses = currentExpenses;
+      }
+
+      // Formatar colunas
+      evolutionSheet.getColumn('incomes').numFmt = 'R$ #,##0.00';
+      evolutionSheet.getColumn('expenses').numFmt = 'R$ #,##0.00';
+      evolutionSheet.getColumn('balance').numFmt = 'R$ #,##0.00';
+      evolutionSheet.getColumn('incomeVariation').numFmt = '0.00"%"';
+      evolutionSheet.getColumn('expenseVariation').numFmt = '0.00"%"';
+
+      // Aba de Estatísticas Detalhadas
+      const statsSheet = workbook.addWorksheet('Estatísticas Mensais');
+      statsSheet.columns = [
+        { header: 'Mês', key: 'month', width: 15 },
+        { header: 'Qtd. Receitas', key: 'incomeCount', width: 15 },
+        { header: 'Média Receitas (R$)', key: 'incomeAverage', width: 20 },
+        { header: 'Qtd. Despesas', key: 'expenseCount', width: 15 },
+        { header: 'Média Despesas (R$)', key: 'expenseAverage', width: 20 },
+        { header: 'Total Transações', key: 'totalTransactions', width: 18 },
+      ];
+
+      // Estilo do cabeçalho
+      const statsHeaderRow = statsSheet.getRow(1);
+      for (let col = 1; col <= 6; col++) {
+        const cell = statsHeaderRow.getCell(col);
+        cell.font = { bold: true };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FF9C27B0' },
+        };
+        cell.alignment = { horizontal: 'center' };
+      }
+
+      // Adicionar dados estatísticos
+      for (let month = 1; month <= 12; month++) {
+        const incomeData = incomesMap.get(month) || {
+          total: 0,
+          count: 0,
+          average: 0,
+        };
+        const expenseData = expensesMap.get(month) || {
+          total: 0,
+          count: 0,
+          average: 0,
+        };
+
+        statsSheet.addRow({
+          month: monthNames[month - 1],
+          incomeCount: incomeData.count,
+          incomeAverage: incomeData.average,
+          expenseCount: expenseData.count,
+          expenseAverage: expenseData.average,
+          totalTransactions: incomeData.count + expenseData.count,
+        });
+      }
+
+      // Formatar colunas
+      statsSheet.getColumn('incomeAverage').numFmt = 'R$ #,##0.00';
+      statsSheet.getColumn('expenseAverage').numFmt = 'R$ #,##0.00';
+      statsSheet.getColumn('incomeCount').alignment = { horizontal: 'center' };
+      statsSheet.getColumn('expenseCount').alignment = { horizontal: 'center' };
+      statsSheet.getColumn('totalTransactions').alignment = {
+        horizontal: 'center',
+      };
+
+      // Adicionar totais anuais na aba de estatísticas
+      const totalIncomes = Array.from(incomesMap.values()).reduce(
+        (sum, data) => sum + data.total,
+        0,
+      );
+      const totalExpenses = Array.from(expensesMap.values()).reduce(
+        (sum, data) => sum + data.total,
+        0,
+      );
+      const totalIncomeTransactions = Array.from(incomesMap.values()).reduce(
+        (sum, data) => sum + data.count,
+        0,
+      );
+      const totalExpenseTransactions = Array.from(expensesMap.values()).reduce(
+        (sum, data) => sum + data.count,
+        0,
+      );
+
+      const totalRow = statsSheet.addRow({
+        month: 'TOTAL ANUAL',
+        incomeCount: totalIncomeTransactions,
+        incomeAverage:
+          totalIncomeTransactions > 0
+            ? totalIncomes / totalIncomeTransactions
+            : 0,
+        expenseCount: totalExpenseTransactions,
+        expenseAverage:
+          totalExpenseTransactions > 0
+            ? totalExpenses / totalExpenseTransactions
+            : 0,
+        totalTransactions: totalIncomeTransactions + totalExpenseTransactions,
+      });
+
+      for (let col = 1; col <= 6; col++) {
+        const cell = totalRow.getCell(col);
+        cell.font = { bold: true };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFE1BEE7' },
+        };
+      }
+
+      // Aba de Resumo Anual
+      const summarySheet = workbook.addWorksheet('Resumo Anual');
+      summarySheet.columns = [
+        { header: 'Indicador', key: 'indicator', width: 30 },
+        { header: 'Valor', key: 'value', width: 20 },
+      ];
+
+      // Estilo do cabeçalho
+      const summaryHeaderRow = summarySheet.getRow(1);
+      for (let col = 1; col <= 2; col++) {
+        const cell = summaryHeaderRow.getCell(col);
+        cell.font = { bold: true };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FF4CAF50' },
+        };
+        cell.alignment = { horizontal: 'center' };
+      }
+
+      const yearBalance = totalIncomes - totalExpenses;
+      const avgMonthlyIncomes = totalIncomes / 12;
+      const avgMonthlyExpenses = totalExpenses / 12;
+
+      const summaryData = [
+        { indicator: 'Total de Receitas no Ano', value: totalIncomes },
+        { indicator: 'Total de Despesas no Ano', value: totalExpenses },
+        { indicator: 'Saldo Anual', value: yearBalance },
+        { indicator: 'Média Mensal de Receitas', value: avgMonthlyIncomes },
+        { indicator: 'Média Mensal de Despesas', value: avgMonthlyExpenses },
+        {
+          indicator: 'Total de Transações',
+          value: totalIncomeTransactions + totalExpenseTransactions,
+        },
+      ];
+
+      summaryData.forEach((item, index) => {
+        const row = summarySheet.addRow(item);
+        if (index === 2) {
+          // Saldo anual
+          for (let col = 1; col <= 2; col++) {
+            const cell = row.getCell(col);
+            cell.fill = {
+              type: 'pattern',
+              pattern: 'solid',
+              fgColor: { argb: yearBalance >= 0 ? 'FFE8F5E8' : 'FFFDE8E8' },
+            };
+          }
+        }
+      });
+
+      summarySheet.getColumn('value').numFmt =
+        '[>999999] R$ #,##0.00_);[>0] R$ #,##0.00;0';
+
+      // Gerar buffer do Excel
+      const buffer = await workbook.xlsx.writeBuffer();
+      return Buffer.from(buffer);
+    } catch (err) {
+      this.logger.error('Erro ao exportar evolução anual para Excel', {
+        error: err,
+        userId: user.id,
+        year,
+      });
+      throw new InternalServerErrorException(
+        'Erro ao gerar arquivo Excel de evolução anual.',
+      );
+    }
+  }
 }

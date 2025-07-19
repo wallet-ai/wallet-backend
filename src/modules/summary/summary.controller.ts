@@ -23,6 +23,7 @@ import {
   MonthlySummaryDto,
   YearlySummaryDto,
 } from './dtos/monthly-summary.dto';
+import { YearlyExportQueryDto } from './dtos/yearly-export-query.dto';
 import { SummaryService } from './summary.service';
 
 @ApiTags('Summary')
@@ -229,6 +230,60 @@ export class SummaryController {
     ];
 
     const fileName = `relatorio-categorias-${monthNames[query.month - 1]}-${query.year}.xlsx`;
+
+    res.set({
+      'Content-Disposition': `attachment; filename="${fileName}"`,
+      'Content-Length': buffer.length.toString(),
+    });
+
+    res.end(buffer);
+  }
+
+  @Get('export-yearly-evolution')
+  @ApiOperation({
+    summary: 'Exportar evolução anual de receitas e despesas para Excel',
+    description:
+      'Exporta a evolução das receitas e despesas ao longo de um ano específico para um arquivo Excel (.xlsx). O arquivo contém três abas: Evolução Anual, Estatísticas Mensais e Resumo Anual.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Arquivo Excel de evolução anual gerado com sucesso',
+    content: {
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': {
+        schema: {
+          type: 'string',
+          format: 'binary',
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Parâmetros inválidos',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Não autorizado',
+  })
+  @ApiResponse({
+    status: 500,
+    description: 'Erro interno do servidor',
+  })
+  @Header(
+    'Content-Type',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  )
+  async exportYearlyEvolution(
+    @AuthenticatedUser() user: User,
+    @Query(new ValidationPipe({ transform: true })) query: YearlyExportQueryDto,
+    @Res() res: Response,
+  ): Promise<void> {
+    const buffer = await this.summaryService.exportYearlyEvolutionToExcel(
+      user,
+      query.year,
+    );
+
+    const fileName = `evolucao-anual-${query.year}.xlsx`;
 
     res.set({
       'Content-Disposition': `attachment; filename="${fileName}"`,
