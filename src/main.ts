@@ -6,6 +6,14 @@ import { ResponseInterceptor } from 'common/interceptors/response.interceptor';
 import { AppModule } from 'modules/app.module';
 import { Logger } from 'nestjs-pino';
 
+// main.ts
+import * as crypto from 'crypto';
+
+if (!globalThis.crypto) {
+  // @ts-ignore
+  globalThis.crypto = crypto;
+}
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     bufferLogs: true,
