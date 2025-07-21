@@ -19,32 +19,6 @@ export class FirebaseAuthGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest<RequestWithUser>();
 
-    if (process.env.NODE_ENV === 'development') {
-      const decoded: DecodedIdToken = {
-        uid: 'fake-uid-dev',
-        email: 'dev@local.com',
-        name: 'Dev User',
-        aud: 'dev',
-        auth_time: Date.now(),
-        exp: Date.now() + 100000,
-        iat: Date.now(),
-        iss: '',
-        sub: '',
-        firebase: {
-          identities: {},
-          sign_in_provider: 'custom',
-        },
-      };
-
-      const userEntity =
-        await this.userService.findOrCreateFromFirebase(decoded);
-
-      req['user'] = decoded;
-      req['userEntity'] = userEntity;
-
-      return true;
-    }
-
     const authHeader = req.headers.authorization;
 
     if (!authHeader?.startsWith('Bearer ')) {
