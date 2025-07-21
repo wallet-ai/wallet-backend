@@ -1,7 +1,10 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class SeedDefaultCategories1749177026503 implements MigrationInterface {
+export class SeedCategoriesUnified1749177026503 implements MigrationInterface {
+  name = 'SeedCategoriesUnified1749177026503';
+
   public async up(queryRunner: QueryRunner): Promise<void> {
+    // Seed das categorias padrão
     await queryRunner.query(`
       INSERT INTO "category" ("name", "type") VALUES 
         ('Aluguel', 'expense'),
@@ -20,6 +23,7 @@ export class SeedDefaultCategories1749177026503 implements MigrationInterface {
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
+    // Remove as categorias inseridas
     await queryRunner.query(`
       DELETE FROM "category" 
       WHERE "name" IN (
