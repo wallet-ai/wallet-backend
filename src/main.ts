@@ -71,9 +71,7 @@ async function bootstrap() {
   app.useLogger(app.get(Logger));
 
   app.enableCors({
-    origin: [
-      'https://wallet-frontend-hik2r391g-thiago-sanches-projects.vercel.app/dashboard',
-    ],
+    origin: [process.env.FRONTEND_URL, 'http://localhost:3000'],
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
   });
