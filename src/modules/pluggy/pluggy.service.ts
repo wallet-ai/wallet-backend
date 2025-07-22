@@ -32,6 +32,7 @@ export class PluggyService {
 
   async createConnectToken(): Promise<string> {
     try {
+      console.log('chave = ', process.env.PLUGGY_API_KEY);
       const res = await axios.post(
         'https://api.pluggy.ai/connect_token',
         {}, // corpo vazio ou com campos opcionais, como clientUserId
@@ -53,6 +54,30 @@ export class PluggyService {
 
       this.logger.error('❌ Erro ao criar connect token:', errorMessage);
       throw new Error('Failed to create connect token with Pluggy API');
+    }
+  }
+
+  async getAccountsByItemId(itemId: string): Promise<any> {
+    try {
+      const res = await axios.get(
+        `https://api.pluggy.ai/accounts?itemId=${itemId}`,
+        {
+          headers: {
+            'X-API-KEY': process.env.PLUGGY_API_KEY || '',
+          },
+        },
+      );
+
+      this.logger.log(`Accounts retrieved successfully for item: ${itemId}`);
+      return res.data;
+    } catch (error) {
+      const errorMessage =
+        error instanceof AxiosError
+          ? JSON.stringify(error.response?.data || error.message)
+          : String(error);
+
+      this.logger.error('❌ Erro ao buscar contas do item:', errorMessage);
+      throw new Error('Failed to get accounts from Pluggy API');
     }
   }
 }

@@ -1,6 +1,7 @@
 import { Column, Entity, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
 import { Expense } from './expense.entity';
 import { Income } from './income.entity';
+import { PluggyItem } from './pluggy-item.entity';
 import { UserIncomeAllocation } from './user-income-allocation.entity';
 
 @Entity()
@@ -25,4 +26,7 @@ export class User {
 
   @OneToMany(() => Expense, (expense) => expense.user)
   expenses: Expense[];
+
+  @OneToMany(() => PluggyItem, (pluggyItem) => pluggyItem.user)
+  pluggyItems: PluggyItem[];
 }

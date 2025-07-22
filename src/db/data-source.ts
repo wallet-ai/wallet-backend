@@ -4,6 +4,7 @@ import { DataSource } from 'typeorm';
 import { Category } from '../entities/category.entity';
 import { Expense } from '../entities/expense.entity';
 import { Income } from '../entities/income.entity';
+import { PluggyItem } from '../entities/pluggy-item.entity';
 import { UserIncomeAllocation } from '../entities/user-income-allocation.entity';
 import { User } from '../entities/user.entity';
 
@@ -14,7 +15,7 @@ export const AppDataSource = new DataSource({
   username: process.env.DB_USERNAME,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
-  entities: [User, Expense, Category, Income, UserIncomeAllocation],
+  entities: [User, Expense, Category, Income, UserIncomeAllocation, PluggyItem],
   migrations: ['src/db/migrations/*.ts'],
   synchronize: false,
 });
