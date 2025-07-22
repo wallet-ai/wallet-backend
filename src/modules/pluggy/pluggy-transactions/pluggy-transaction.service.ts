@@ -47,7 +47,10 @@ export class PluggyTransactionService {
           const exists = await this.transactionRepo.findOneBy({
             pluggyTransactionId: tx.id,
           });
-          if (exists) continue;
+          if (exists) {
+            all.push(exists);
+            continue;
+          }
 
           const newTx = this.transactionRepo.create({
             pluggyTransactionId: tx.id,

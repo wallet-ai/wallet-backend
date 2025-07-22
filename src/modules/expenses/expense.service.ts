@@ -1,5 +1,6 @@
 import { DateFilterDto } from '@common/dtos/date-filter.dto';
 import { Expense } from '@entities/expense.entity';
+import { Transaction } from '@entities/transaction.entity';
 import { User } from '@entities/user.entity';
 import { CategoryService } from '@modules/categories/category.service';
 import {
@@ -18,6 +19,8 @@ export class ExpenseService {
   constructor(
     @InjectRepository(Expense)
     private readonly repo: Repository<Expense>,
+    @InjectRepository(Transaction)
+    private readonly transactionRepo: Repository<Transaction>,
     private readonly logger: Logger,
     private readonly categoryService: CategoryService,
   ) {}
@@ -39,12 +42,54 @@ export class ExpenseService {
 
   async findAllByUser(user: User, filters?: DateFilterDto) {
     try {
+      // Busca por transações reais do Pluggy
+      const txQuery = this.transactionRepo
+        .createQueryBuilder('transaction')
+        .where('transaction.userId = :userId', { userId: user.id })
+        .andWhere('transaction.type = :type', { type: 'EXPENSE' })
+        .andWhere('transaction.description != :description', {
+          description: 'Pagamento recebido',
+        })
+        .andWhere('transaction.category != :category', {
+          category: 'Same person transfer',
+        });
+
+      if (filters?.month !== undefined) {
+        txQuery.andWhere('EXTRACT(MONTH FROM transaction.date) = :month', {
+          month: filters.month + 1,
+        });
+      }
+
+      if (filters?.year !== undefined) {
+        txQuery.andWhere('EXTRACT(YEAR FROM transaction.date) = :year', {
+          year: filters.year,
+        });
+      }
+
+      const transactions = await txQuery
+        .orderBy('transaction.date', 'DESC')
+        .getMany();
+
+      if (transactions.length > 0) {
+        return transactions.map((tx) => ({
+          id: tx.id,
+          description: tx.description,
+          amount: tx.amount,
+          date: tx.date,
+          category: {
+            id: 7, // TODO atualizar - Outros Gastos
+            name: tx.category,
+          },
+          source: 'PLUGGY',
+        }));
+      }
+
+      // Caso não existam transações, retornar despesas manuais
       const queryBuilder = this.repo
         .createQueryBuilder('expense')
         .leftJoinAndSelect('expense.category', 'category')
         .where('expense.userId = :userId', { userId: user.id });
 
-      // Aplicar filtros de data se fornecidos
       filters?.month !== undefined &&
         queryBuilder.andWhere('EXTRACT(MONTH FROM expense.date) = :month', {
           month: filters.month + 1,
@@ -54,7 +99,18 @@ export class ExpenseService {
           year: filters.year,
         });
 
-      return await queryBuilder.orderBy('expense.date', 'DESC').getMany();
+      const expenses = await queryBuilder
+        .orderBy('expense.date', 'DESC')
+        .getMany();
+
+      return expenses.map((exp) => ({
+        id: exp.id,
+        description: exp.description,
+        amount: exp.amount,
+        date: exp.date,
+        category: exp.category,
+        source: 'MANUAL',
+      }));
     } catch (err) {
       this.logger.error('Erro ao buscar despesas', { error: err });
       throw new InternalServerErrorException('Erro ao buscar despesas.');

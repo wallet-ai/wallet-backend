@@ -1,4 +1,5 @@
 import { Expense } from '@entities/expense.entity';
+import { Transaction } from '@entities/transaction.entity';
 import { CategoryModule } from '@modules/categories/category.module';
 import { ExpenseService } from '@modules/expenses/expense.service';
 import { FirebaseModule } from '@modules/firebase/firebase.module';
@@ -9,7 +10,7 @@ import { ExpenseController } from 'modules/expenses/expense.controller';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Expense]),
+    TypeOrmModule.forFeature([Expense, Transaction]),
     UserModule,
     FirebaseModule,
     CategoryModule,
