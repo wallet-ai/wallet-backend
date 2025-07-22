@@ -1,3 +1,6 @@
+import { CreatePluggyItemDto } from '@modules/pluggy/dtos/create-pluggy-item.dto';
+import { PluggyItemResponseDto } from '@modules/pluggy/pluggy-item/dtos/pluggy-item-response.dto';
+import { PluggyItemService } from '@modules/pluggy/pluggy-item/pluggy-item.service';
 import {
   Body,
   Controller,
@@ -17,13 +20,10 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { AuthenticatedUser } from '../../auth/auth-user.decorator';
-import { FirebaseAuthGuard } from '../../auth/firebase-auth.guard';
-import { User } from '../../entities/user.entity';
-import { CreatePluggyItemDto } from './dtos/create-pluggy-item.dto';
-import { PluggyItemResponseDto } from './dtos/pluggy-item-response.dto';
-import { PluggyItemService } from './pluggy-item.service';
-import { PluggyService } from './pluggy.service';
+import { AuthenticatedUser } from '../../../auth/auth-user.decorator';
+import { FirebaseAuthGuard } from '../../../auth/firebase-auth.guard';
+import { User } from '../../../entities/user.entity';
+import { PluggyService } from '../pluggy.service';
 
 @ApiTags('Pluggy Items')
 @ApiBearerAuth('firebase-auth')

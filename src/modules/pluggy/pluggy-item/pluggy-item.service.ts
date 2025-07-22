@@ -1,8 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { PluggyItem } from '../../entities/pluggy-item.entity';
-import { User } from '../../entities/user.entity';
+import { PluggyItem } from '../../../entities/pluggy-item.entity';
+import { User } from '../../../entities/user.entity';
 
 @Injectable()
 export class PluggyItemService {
