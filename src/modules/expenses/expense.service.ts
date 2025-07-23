@@ -48,6 +48,7 @@ export class ExpenseService {
         expensesResponse.push(
           ...pluggyResponse.map((tx) => ({
             id: tx.id,
+            itemId: tx.itemId,
             description: tx.description,
             amount: +tx.amount * -1,
             date: tx.date,

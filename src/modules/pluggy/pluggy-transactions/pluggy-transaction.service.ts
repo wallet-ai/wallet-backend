@@ -23,14 +23,31 @@ export class PluggyTransactionService {
     itemId: string,
     userId: number,
   ): Promise<Transaction[]> {
+    const apiKey = process.env.PLUGGY_API_KEY;
+
+    // 1. Buscar lista de categorias com tradução
+    const categoriesRes = await axios.get('https://api.pluggy.ai/categories', {
+      headers: { 'X-API-KEY': apiKey },
+    });
+
+    const categoryMap = new Map<string, string>();
+    for (const cat of categoriesRes.data.results) {
+      console.log(
+        'Categoria:',
+        cat.description,
+        'Tradução:',
+        cat.descriptionTranslated,
+      );
+      categoryMap.set(cat.description, cat.descriptionTranslated);
+    }
+
+    // 2. Buscar contas do item
     const accountRes = await axios.get(
       `https://api.pluggy.ai/accounts?itemId=${itemId}`,
       {
-        headers: { 'X-API-KEY': process.env.PLUGGY_API_KEY },
+        headers: { 'X-API-KEY': apiKey },
       },
     );
-
-    console.log('accountRes:', accountRes.data);
 
     const all: Transaction[] = [];
 
@@ -41,7 +58,7 @@ export class PluggyTransactionService {
         const res = await axios.get(
           `https://api.pluggy.ai/transactions?accountId=${account.id}`,
           {
-            headers: { 'X-API-KEY': process.env.PLUGGY_API_KEY },
+            headers: { 'X-API-KEY': apiKey },
             params: { page, pageSize: 500 },
           },
         );
@@ -58,13 +75,17 @@ export class PluggyTransactionService {
             continue;
           }
 
+          // 3. Traduzir a categoria se existir
+          const translatedCategory =
+            categoryMap.get(tx.category) || tx.category;
+
           const newTx = this.transactionRepo.create({
             pluggyTransactionId: tx.id,
             description: tx.description,
             amount: tx.amount,
             date: tx.date,
             type: tx.amount > 0 ? 'INCOME' : 'EXPENSE',
-            category: tx.category,
+            category: translatedCategory,
             accountId: account.id,
             itemId,
             user: { id: userId },

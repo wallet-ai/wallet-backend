@@ -57,6 +57,8 @@ export class IncomeService {
         incomesResponse.push(
           ...pluggyResponse.map((tx) => ({
             id: tx.id,
+            itemId: tx.itemId,
+            type: tx.type,
             description: tx.description,
             amount: +tx.amount,
             date: tx.date,
