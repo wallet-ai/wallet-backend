@@ -36,7 +36,6 @@ export class CreateExpenseDto {
     description: 'Category ID',
     example: 1,
   })
-  @IsNumber()
-  @IsPositive()
-  categoryId: number;
+  @IsString()
+  category: string;
 }

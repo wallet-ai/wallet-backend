@@ -1,4 +1,3 @@
-import { CategoryResponseDto } from '@modules/categories/dtos/category-response.dto';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class IncomeResponseDto {
@@ -19,7 +18,6 @@ export class IncomeResponseDto {
 
   @ApiProperty({
     description: 'Category information',
-    type: CategoryResponseDto,
   })
-  category: CategoryResponseDto;
+  category: string;
 }

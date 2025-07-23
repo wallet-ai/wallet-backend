@@ -1,5 +1,4 @@
 import { Column, Entity, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
-import { Category } from './category.entity';
 import { User } from './user.entity';
 
 @Entity()
@@ -19,6 +18,5 @@ export class Expense {
   @ManyToOne(() => User, (user) => user.expenses)
   user: User;
 
-  @ManyToOne(() => Category, (category) => category.expenses)
-  category: Category;
+  category: string;
 }

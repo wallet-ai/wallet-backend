@@ -64,9 +64,9 @@ export class SummaryService {
         expensesMap.set(parseInt(item.month), parseFloat(item.total));
       });
 
-      // Criar resumo para todos os 12 meses
+      // Criar resumo para todos os meses até o atual
       const monthlySummaries: MonthlySummaryDto[] = [];
-      for (let month = 1; month <= 12; month++) {
+      for (let month = 1; month <= new Date().getMonth() + 1; month++) {
         const totalIncomes = incomesMap.get(month) || 0;
         const totalExpenses = expensesMap.get(month) || 0;
 
@@ -238,7 +238,7 @@ export class SummaryService {
         incomeSheet.addRow({
           date: income.startDate,
           description: income.description,
-          category: income.category?.name || 'Sem categoria',
+          category: income.category,
           amount: parseFloat(income.amount.toString()),
         });
       });
@@ -294,7 +294,7 @@ export class SummaryService {
         expenseSheet.addRow({
           date: expense.date,
           description: expense.description,
-          category: expense.category?.name || 'Sem categoria',
+          category: expense.category,
           amount: parseFloat(expense.amount.toString()),
         });
       });

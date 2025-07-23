@@ -1,6 +1,5 @@
 import { Expense } from '@entities/expense.entity';
 import { Transaction } from '@entities/transaction.entity';
-import { CategoryModule } from '@modules/categories/category.module';
 import { ExpenseService } from '@modules/expenses/expense.service';
 import { FirebaseModule } from '@modules/firebase/firebase.module';
 import { UserModule } from '@modules/users/user.module';
@@ -13,7 +12,6 @@ import { ExpenseController } from 'modules/expenses/expense.controller';
     TypeOrmModule.forFeature([Expense, Transaction]),
     UserModule,
     FirebaseModule,
-    CategoryModule,
   ],
   controllers: [ExpenseController],
   providers: [ExpenseService],

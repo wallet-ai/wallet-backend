@@ -2,7 +2,6 @@ import { DateFilterDto } from '@common/dtos/date-filter.dto';
 import { Expense } from '@entities/expense.entity';
 import { Transaction } from '@entities/transaction.entity';
 import { User } from '@entities/user.entity';
-import { CategoryService } from '@modules/categories/category.service';
 import {
   Injectable,
   InternalServerErrorException,
@@ -22,13 +21,11 @@ export class ExpenseService {
     @InjectRepository(Transaction)
     private readonly transactionRepo: Repository<Transaction>,
     private readonly logger: Logger,
-    private readonly categoryService: CategoryService,
   ) {}
 
   async create(dto: CreateExpenseDto, user: User) {
     try {
-      const category = await this.categoryService.findById(dto.categoryId);
-      return await this.repo.save({ ...dto, user, category });
+      return await this.repo.save({ ...dto, user });
     } catch (err) {
       this.logger.error('Erro ao salvar despesa', { error: err });
 
@@ -56,7 +53,7 @@ export class ExpenseService {
 
       if (filters?.month !== undefined) {
         txQuery.andWhere('EXTRACT(MONTH FROM transaction.date) = :month', {
-          month: filters.month + 1,
+          month: filters.month,
         });
       }
 
@@ -70,29 +67,28 @@ export class ExpenseService {
         .orderBy('transaction.date', 'DESC')
         .getMany();
 
+      const expensesResponse = [];
+
       if (transactions.length > 0) {
-        return transactions.map((tx) => ({
-          id: tx.id,
-          description: tx.description,
-          amount: tx.amount,
-          date: tx.date,
-          category: {
-            id: 7, // TODO atualizar - Outros Gastos
-            name: tx.category,
-          },
-          source: 'PLUGGY',
-        }));
+        expensesResponse.push(
+          ...transactions.map((tx) => ({
+            id: tx.id,
+            description: tx.description,
+            amount: +tx.amount,
+            date: tx.date,
+            category: tx.category,
+            source: 'PLUGGY',
+          })),
+        );
       }
 
-      // Caso não existam transações, retornar despesas manuais
       const queryBuilder = this.repo
         .createQueryBuilder('expense')
-        .leftJoinAndSelect('expense.category', 'category')
         .where('expense.userId = :userId', { userId: user.id });
 
       filters?.month !== undefined &&
         queryBuilder.andWhere('EXTRACT(MONTH FROM expense.date) = :month', {
-          month: filters.month + 1,
+          month: filters.month,
         });
       filters?.year !== undefined &&
         queryBuilder.andWhere('EXTRACT(YEAR FROM expense.date) = :year', {
@@ -103,14 +99,19 @@ export class ExpenseService {
         .orderBy('expense.date', 'DESC')
         .getMany();
 
-      return expenses.map((exp) => ({
-        id: exp.id,
-        description: exp.description,
-        amount: exp.amount,
-        date: exp.date,
-        category: exp.category,
-        source: 'MANUAL',
-      }));
+      expenses.length &&
+        expensesResponse.push(
+          ...expenses.map((exp) => ({
+            id: exp.id,
+            description: exp.description,
+            amount: exp.amount,
+            date: exp.date,
+            category: exp.category,
+            source: 'MANUAL',
+          })),
+        );
+
+      return expensesResponse;
     } catch (err) {
       this.logger.error('Erro ao buscar despesas', { error: err });
       throw new InternalServerErrorException('Erro ao buscar despesas.');
@@ -189,12 +190,6 @@ export class ExpenseService {
 
       if (!expense) {
         throw new NotFoundException('Despesa não encontrada.');
-      }
-
-      // Se a categoria foi alterada, validar se existe
-      if (dto.categoryId && dto.categoryId !== expense.category.id) {
-        const category = await this.categoryService.findById(dto.categoryId);
-        expense.category = category;
       }
 
       // Atualizar apenas os campos fornecidos

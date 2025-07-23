@@ -9,7 +9,6 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Logger } from 'nestjs-pino';
 import { Repository } from 'typeorm';
-import { CategoryService } from '../categories/category.service';
 import { CreateIncomeDto } from './dtos/create-income.dto';
 import { UpdateIncomeDto } from './dtos/update-income.dto';
 
@@ -19,20 +18,17 @@ export class IncomeService {
     @InjectRepository(Income)
     private readonly repo: Repository<Income>,
     private readonly logger: Logger,
-    private readonly categoryService: CategoryService,
   ) {}
 
   async create(dto: CreateIncomeDto, user: User) {
     try {
-      const category = await this.categoryService.findById(dto.categoryId);
-
       const income = {
         description: dto.description,
         amount: dto.amount,
         startDate: dto.startDate,
         endDate: dto.endDate,
         user,
-        category,
+        category: dto.category,
       };
 
       return await this.repo.save(income);

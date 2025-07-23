@@ -43,7 +43,6 @@ export class UpdateExpenseDto {
     required: false,
   })
   @IsOptional()
-  @IsNumber()
-  @IsPositive()
-  categoryId?: number;
+  @IsString()
+  category?: string;
 }

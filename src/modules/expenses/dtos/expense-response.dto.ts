@@ -14,10 +14,7 @@ export class ExpenseResponseDto {
   date: Date;
 
   @ApiProperty({ description: 'Category information' })
-  category: {
-    id: number;
-    name: string;
-  };
+  category: string;
 }
 
 export class ExpenseCategoryTotalDto {
