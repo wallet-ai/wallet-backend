@@ -14,5 +14,6 @@ import { TypeOrmModule } from '@nestjs/typeorm';
   ],
   controllers: [PluggyTransactionController],
   providers: [PluggyTransactionService],
+  exports: [PluggyTransactionService],
 })
 export class PluggyTransactionModule {}

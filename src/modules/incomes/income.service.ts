@@ -1,6 +1,7 @@
 import { DateFilterDto } from '@common/dtos/date-filter.dto';
 import { Income } from '@entities/income.entity';
 import { User } from '@entities/user.entity';
+import { PluggyTransactionService } from '@modules/pluggy/pluggy-transactions/pluggy-transaction.service';
 import {
   Injectable,
   InternalServerErrorException,
@@ -17,6 +18,7 @@ export class IncomeService {
   constructor(
     @InjectRepository(Income)
     private readonly repo: Repository<Income>,
+    private readonly pluggyTransactionService: PluggyTransactionService,
     private readonly logger: Logger,
   ) {}
 
@@ -45,9 +47,27 @@ export class IncomeService {
 
   async findAllByUser(user: User, filters?: DateFilterDto) {
     try {
+      // Busca por transações reais do Pluggy
+      const pluggyResponse =
+        await this.pluggyTransactionService.getIncomesByUser(user, filters);
+
+      const incomesResponse = [];
+
+      if (pluggyResponse.length > 0) {
+        incomesResponse.push(
+          ...pluggyResponse.map((tx) => ({
+            id: tx.id,
+            description: tx.description,
+            amount: +tx.amount,
+            date: tx.date,
+            category: tx.category,
+            source: 'PLUGGY',
+          })),
+        );
+      }
+
       const queryBuilder = this.repo
         .createQueryBuilder('income')
-        .leftJoinAndSelect('income.category', 'category')
         .where('income.userId = :userId', { userId: user.id });
 
       // Aplicar filtros de data se fornecidos
@@ -60,7 +80,11 @@ export class IncomeService {
           year: filters.year,
         });
 
-      return await queryBuilder.orderBy('income.startDate', 'DESC').getMany();
+      incomesResponse.push(
+        ...(await queryBuilder.orderBy('income.startDate', 'DESC').getMany()),
+      );
+
+      return incomesResponse;
     } catch (err) {
       this.logger.error('Erro ao buscar rendas', { error: err });
       throw new InternalServerErrorException('Erro ao buscar rendas.');

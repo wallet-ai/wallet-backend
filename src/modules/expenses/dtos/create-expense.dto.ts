@@ -33,7 +33,7 @@ export class CreateExpenseDto {
   date: string;
 
   @ApiProperty({
-    description: 'Category ID',
+    description: 'Category',
     example: 1,
   })
   @IsString()

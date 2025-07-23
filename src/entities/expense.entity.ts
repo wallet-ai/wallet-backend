@@ -18,5 +18,6 @@ export class Expense {
   @ManyToOne(() => User, (user) => user.expenses)
   user: User;
 
+  @Column()
   category: string;
 }

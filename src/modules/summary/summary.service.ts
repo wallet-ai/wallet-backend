@@ -1,6 +1,7 @@
 import { Expense } from '@entities/expense.entity';
 import { Income } from '@entities/income.entity';
 import { User } from '@entities/user.entity';
+import { PluggyTransactionService } from '@modules/pluggy/pluggy-transactions/pluggy-transaction.service';
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import * as ExcelJS from 'exceljs';
@@ -18,6 +19,8 @@ export class SummaryService {
     private readonly incomeRepo: Repository<Income>,
     @InjectRepository(Expense)
     private readonly expenseRepo: Repository<Expense>,
+
+    private readonly pluggyTransactionService: PluggyTransactionService,
     private readonly logger: Logger,
   ) {}
 
@@ -26,7 +29,11 @@ export class SummaryService {
     year: number,
   ): Promise<MonthlySummaryDto[]> {
     try {
-      // Buscar receitas agrupadas por mês
+      // Buscar receitas e despesas do Pluggy agrupadas por mês
+      const { pluggyIncomesByMonth, pluggyExpensesByMonth } =
+        await this.pluggyTransactionService.getMonthlySummary(user, year);
+
+      // Buscar receitas manuais agrupadas por mês
       const incomesByMonth = await this.incomeRepo
         .createQueryBuilder('income')
         .select([
@@ -39,7 +46,7 @@ export class SummaryService {
         .orderBy('month', 'ASC')
         .getRawMany();
 
-      // Buscar despesas agrupadas por mês
+      // Buscar despesas manuais agrupadas por mês
       const expensesByMonth = await this.expenseRepo
         .createQueryBuilder('expense')
         .select([
@@ -52,16 +59,29 @@ export class SummaryService {
         .orderBy('month', 'ASC')
         .getRawMany();
 
-      // Criar mapa de receitas por mês
+      // Mapa de receitas (manual + pluggy)
       const incomesMap = new Map<number, number>();
-      incomesByMonth.forEach((item) => {
-        incomesMap.set(parseInt(item.month), parseFloat(item.total));
+      incomesByMonth.forEach(({ month, total }) => {
+        const m = parseInt(month);
+        incomesMap.set(m, parseFloat(total));
+      });
+      pluggyIncomesByMonth.forEach(({ month, total }) => {
+        const m = parseInt(month);
+        const existing = incomesMap.get(m) || 0;
+        incomesMap.set(m, existing + parseFloat(total));
       });
 
-      // Criar mapa de despesas por mês
+      // Mapa de despesas (manual + pluggy)
       const expensesMap = new Map<number, number>();
-      expensesByMonth.forEach((item) => {
-        expensesMap.set(parseInt(item.month), parseFloat(item.total));
+      expensesByMonth.forEach(({ month, total }) => {
+        const m = parseInt(month);
+        expensesMap.set(m, parseFloat(total));
+      });
+      pluggyExpensesByMonth.forEach(({ month, total }) => {
+        const m = parseInt(month.toString()); // garante que seja string
+        const existing = expensesMap.get(m) || 0;
+        const amount = parseFloat(total.toString()) * -1;
+        expensesMap.set(m, existing + amount);
       });
 
       // Criar resumo para todos os meses até o atual
@@ -117,7 +137,6 @@ export class SummaryService {
       // Buscar receitas do mês
       const incomes = await this.incomeRepo
         .createQueryBuilder('income')
-        .leftJoinAndSelect('income.category', 'category')
         .where('income.userId = :userId', { userId: user.id })
         .andWhere('EXTRACT(YEAR FROM income.startDate) = :year', { year })
         .andWhere('EXTRACT(MONTH FROM income.startDate) = :month', { month })
@@ -127,7 +146,6 @@ export class SummaryService {
       // Buscar despesas do mês
       const expenses = await this.expenseRepo
         .createQueryBuilder('expense')
-        .leftJoinAndSelect('expense.category', 'category')
         .where('expense.userId = :userId', { userId: user.id })
         .andWhere('EXTRACT(YEAR FROM expense.date) = :year', { year })
         .andWhere('EXTRACT(MONTH FROM expense.date) = :month', { month })
@@ -150,35 +168,33 @@ export class SummaryService {
 
   async getMonthlyDataByCategory(user: User, year: number, month: number) {
     try {
-      // Buscar receitas agrupadas por categoria
+      // Buscar receitas agrupadas por categoria (string)
       const incomesByCategory = await this.incomeRepo
         .createQueryBuilder('income')
-        .leftJoinAndSelect('income.category', 'category')
         .select([
-          'category.name as categoryName',
+          'income.category as categoryName',
           'COALESCE(SUM(income.amount), 0) as total',
           'COUNT(income.id) as count',
         ])
         .where('income.userId = :userId', { userId: user.id })
         .andWhere('EXTRACT(YEAR FROM income.startDate) = :year', { year })
         .andWhere('EXTRACT(MONTH FROM income.startDate) = :month', { month })
-        .groupBy('category.id, category.name')
+        .groupBy('income.category')
         .orderBy('total', 'DESC')
         .getRawMany();
 
-      // Buscar despesas agrupadas por categoria
+      // Buscar despesas agrupadas por categoria (string)
       const expensesByCategory = await this.expenseRepo
         .createQueryBuilder('expense')
-        .leftJoinAndSelect('expense.category', 'category')
         .select([
-          'category.name as categoryName',
+          'expense.category as categoryName',
           'COALESCE(SUM(expense.amount), 0) as total',
           'COUNT(expense.id) as count',
         ])
         .where('expense.userId = :userId', { userId: user.id })
         .andWhere('EXTRACT(YEAR FROM expense.date) = :year', { year })
         .andWhere('EXTRACT(MONTH FROM expense.date) = :month', { month })
-        .groupBy('category.id, category.name')
+        .groupBy('expense.category')
         .orderBy('total', 'DESC')
         .getRawMany();
 
@@ -202,12 +218,26 @@ export class SummaryService {
     month: number,
   ): Promise<Buffer> {
     try {
+      const { pluggyIncomesByMonth, pluggyExpensesByMonth } =
+        await this.pluggyTransactionService.getMonthlyPluggyDataForExport(
+          user,
+          year,
+          month,
+        );
+
+      const totalIncomes = [];
+      const totalExpenses = [];
+      pluggyIncomesByMonth.length && totalIncomes.push(...pluggyIncomesByMonth);
+      pluggyExpensesByMonth.length &&
+        totalExpenses.push(...pluggyExpensesByMonth);
+
       const { incomes, expenses } = await this.getMonthlyDataForExport(
         user,
         year,
         month,
       );
-
+      incomes.length && totalIncomes.push(...incomes);
+      expenses.length && totalExpenses.push(...expenses);
       const workbook = new ExcelJS.Workbook();
       workbook.creator = 'Wallet App';
       workbook.created = new Date();
@@ -243,11 +273,20 @@ export class SummaryService {
         });
       });
 
+      pluggyIncomesByMonth.forEach((income) => {
+        incomeSheet.addRow({
+          date: income.date,
+          description: income.description,
+          category: income.category,
+          amount: parseFloat(income.amount.toString()),
+        });
+      });
+
       // Formatar coluna de valores
       incomeSheet.getColumn('amount').numFmt = 'R$ #,##0.00';
 
       // Total de receitas
-      const totalIncomes = incomes.reduce(
+      const totalIncomesAmount = totalIncomes.reduce(
         (sum, income) => sum + parseFloat(income.amount.toString()),
         0,
       );
@@ -255,7 +294,7 @@ export class SummaryService {
         date: '',
         description: 'TOTAL',
         category: '',
-        amount: totalIncomes,
+        amount: totalIncomesAmount,
       });
       // Aplicar estilo apenas às células com dados
       for (let col = 1; col <= 4; col++) {
@@ -288,6 +327,14 @@ export class SummaryService {
           fgColor: { argb: 'FFF44336' },
         };
       }
+      pluggyExpensesByMonth.forEach((expense) => {
+        expenseSheet.addRow({
+          date: expense.date,
+          description: expense.description,
+          category: expense.category,
+          amount: parseFloat(expense.amount.toString()),
+        });
+      });
 
       // Adicionar dados de despesas
       expenses.forEach((expense) => {
@@ -303,7 +350,7 @@ export class SummaryService {
       expenseSheet.getColumn('amount').numFmt = 'R$ #,##0.00';
 
       // Total de despesas
-      const totalExpenses = expenses.reduce(
+      const totalExpensesAmount = totalExpenses.reduce(
         (sum, expense) => sum + parseFloat(expense.amount.toString()),
         0,
       );
@@ -311,7 +358,7 @@ export class SummaryService {
         date: '',
         description: 'TOTAL',
         category: '',
-        amount: totalExpenses,
+        amount: totalExpensesAmount,
       });
       // Aplicar estilo apenas às células com dados
       for (let col = 1; col <= 4; col++) {
@@ -343,10 +390,10 @@ export class SummaryService {
         };
       }
 
-      const balance = totalIncomes - totalExpenses;
+      const balance = totalIncomesAmount - totalExpensesAmount;
       const summaryData = [
-        { type: 'Total de Receitas', amount: totalIncomes },
-        { type: 'Total de Despesas', amount: totalExpenses },
+        { type: 'Total de Receitas', amount: totalIncomesAmount },
+        { type: 'Total de Despesas', amount: totalExpensesAmount },
         { type: 'Saldo', amount: balance },
       ];
 
@@ -382,6 +429,60 @@ export class SummaryService {
       throw new InternalServerErrorException('Erro ao gerar arquivo Excel.');
     }
   }
+  async getMergedMonthlyDataByCategory(
+    user: User,
+    year: number,
+    month: number,
+  ): Promise<{
+    incomesByCategory: { categoryName: string; total: number; count: number }[];
+    expensesByCategory: {
+      categoryName: string;
+      total: number;
+      count: number;
+    }[];
+  }> {
+    const manual = await this.getMonthlyDataByCategory(user, year, month);
+    const pluggy =
+      await this.pluggyTransactionService.getMonthlyPluggyDataByCategory(
+        user,
+        year,
+        month,
+      );
+
+    const mergeCategoryData = (
+      a: { categoryName: string; total: number; count: number }[],
+      b: { categoryName: string; total: number; count: number }[],
+    ) => {
+      const map = new Map<string, { total: number; count: number }>();
+
+      [...a, ...b].forEach(({ categoryName, total, count }) => {
+        const existing = map.get(categoryName) || { total: 0, count: 0 };
+        map.set(categoryName, {
+          total: existing.total + total,
+          count: existing.count + count,
+        });
+      });
+
+      return Array.from(map.entries())
+        .map(([categoryName, data]) => ({
+          categoryName,
+          total: data.total,
+          count: data.count,
+        }))
+        .sort((a, b) => b.total - a.total); // ordena por total desc
+    };
+
+    return {
+      incomesByCategory: mergeCategoryData(
+        manual.incomesByCategory,
+        pluggy.incomesByCategory,
+      ),
+      expensesByCategory: mergeCategoryData(
+        manual.expensesByCategory,
+        pluggy.expensesByCategory,
+      ),
+    };
+  }
 
   async exportMonthlyCategoryDataToExcel(
     user: User,
@@ -390,7 +491,7 @@ export class SummaryService {
   ): Promise<Buffer> {
     try {
       const { incomesByCategory, expensesByCategory } =
-        await this.getMonthlyDataByCategory(user, year, month);
+        await this.getMergedMonthlyDataByCategory(user, year, month);
 
       const workbook = new ExcelJS.Workbook();
       workbook.creator = 'Wallet App';
@@ -420,18 +521,18 @@ export class SummaryService {
 
       // Calcular total de receitas para percentuais
       const totalIncomes = incomesByCategory.reduce(
-        (sum, item) => sum + parseFloat(item.total),
+        (sum, item) => sum + item.total,
         0,
       );
 
       // Adicionar dados de receitas por categoria
       incomesByCategory.forEach((item) => {
         const percentage =
-          totalIncomes > 0 ? (parseFloat(item.total) / totalIncomes) * 100 : 0;
+          totalIncomes > 0 ? (item.total / totalIncomes) * 100 : 0;
         incomeSheet.addRow({
-          category: item.categoryname || 'Sem categoria',
-          count: parseInt(item.count),
-          total: parseFloat(item.total),
+          category: item.categoryName || 'Sem categoria',
+          count: item.count,
+          total: item.total,
           percentage: percentage,
         });
       });
@@ -444,10 +545,7 @@ export class SummaryService {
       // Total de receitas
       const totalIncomeRow = incomeSheet.addRow({
         category: 'TOTAL',
-        count: incomesByCategory.reduce(
-          (sum, item) => sum + parseInt(item.count),
-          0,
-        ),
+        count: incomesByCategory.reduce((sum, item) => sum + item.count, 0),
         total: totalIncomes,
         percentage: 100,
       });
@@ -485,20 +583,18 @@ export class SummaryService {
 
       // Calcular total de despesas para percentuais
       const totalExpenses = expensesByCategory.reduce(
-        (sum, item) => sum + parseFloat(item.total),
+        (sum, item) => sum + item.total,
         0,
       );
 
       // Adicionar dados de despesas por categoria
       expensesByCategory.forEach((item) => {
         const percentage =
-          totalExpenses > 0
-            ? (parseFloat(item.total) / totalExpenses) * 100
-            : 0;
+          totalExpenses > 0 ? (item.total / totalExpenses) * 100 : 0;
         expenseSheet.addRow({
-          category: item.categoryname || 'Sem categoria',
-          count: parseInt(item.count),
-          total: parseFloat(item.total),
+          category: item.categoryName || 'Sem categoria',
+          count: item.count,
+          total: item.total,
           percentage: percentage,
         });
       });
@@ -511,10 +607,7 @@ export class SummaryService {
       // Total de despesas
       const totalExpenseRow = expenseSheet.addRow({
         category: 'TOTAL',
-        count: expensesByCategory.reduce(
-          (sum, item) => sum + parseInt(item.count),
-          0,
-        ),
+        count: expensesByCategory.reduce((sum, item) => sum + item.count, 0),
         total: totalExpenses,
         percentage: 100,
       });
@@ -556,23 +649,23 @@ export class SummaryService {
       const categoryMap = new Map();
 
       incomesByCategory.forEach((item) => {
-        const categoryName = item.categoryname || 'Sem categoria';
+        const categoryName = item.categoryName || 'Sem categoria';
         categoryMap.set(categoryName, {
           category: categoryName,
-          incomes: parseFloat(item.total),
+          incomes: item.total,
           expenses: 0,
         });
       });
 
       expensesByCategory.forEach((item) => {
-        const categoryName = item.categoryname || 'Sem categoria';
+        const categoryName = item.categoryName || 'Sem categoria';
         if (categoryMap.has(categoryName)) {
-          categoryMap.get(categoryName).expenses = parseFloat(item.total);
+          categoryMap.get(categoryName).expenses = item.total;
         } else {
           categoryMap.set(categoryName, {
             category: categoryName,
             incomes: 0,
-            expenses: parseFloat(item.total),
+            expenses: item.total,
           });
         }
       });
@@ -682,13 +775,81 @@ export class SummaryService {
     }
   }
 
+  async getMergedYearlyEvolutionData(
+    user: User,
+    year: number,
+  ): Promise<{
+    monthlyIncomes: {
+      month: number;
+      total: number;
+      count: number;
+      average: number;
+    }[];
+    monthlyExpenses: {
+      month: number;
+      total: number;
+      count: number;
+      average: number;
+    }[];
+  }> {
+    const manual = await this.getYearlyEvolutionData(user, year);
+    const pluggy =
+      await this.pluggyTransactionService.getYearlyEvolutionDataFromPluggy(
+        user,
+        year,
+      );
+
+    const mergeByMonth = (
+      a: { month: number; total: number; count: number; average: number }[],
+      b: { month: number; total: number; count: number; average: number }[],
+    ) => {
+      const map = new Map<
+        number,
+        { total: number; count: number; average: number }
+      >();
+
+      [...a, ...b].forEach(({ month, total, count }) => {
+        const existing = map.get(month) || { total: 0, count: 0, average: 0 };
+        const newTotal = existing.total + total;
+        const newCount = existing.count + count;
+        const newAverage = newCount > 0 ? newTotal / newCount : 0;
+
+        map.set(month, {
+          total: newTotal,
+          count: newCount,
+          average: newAverage,
+        });
+      });
+
+      return Array.from(map.entries())
+        .map(([month, data]) => ({
+          month,
+          total: data.total,
+          count: data.count,
+          average: data.average,
+        }))
+        .sort((a, b) => a.month - b.month); // ordenar por mês ASC
+    };
+
+    return {
+      monthlyIncomes: mergeByMonth(
+        manual.monthlyIncomes,
+        pluggy.monthlyIncomes,
+      ),
+      monthlyExpenses: mergeByMonth(
+        manual.monthlyExpenses,
+        pluggy.monthlyExpenses,
+      ),
+    };
+  }
+
   async exportYearlyEvolutionToExcel(
     user: User,
     year: number,
   ): Promise<Buffer> {
     try {
       const { monthlyIncomes, monthlyExpenses } =
-        await this.getYearlyEvolutionData(user, year);
+        await this.getMergedYearlyEvolutionData(user, year);
 
       const workbook = new ExcelJS.Workbook();
       workbook.creator = 'Wallet App';
@@ -699,18 +860,18 @@ export class SummaryService {
       const expensesMap = new Map();
 
       monthlyIncomes.forEach((item) => {
-        incomesMap.set(parseInt(item.month), {
-          total: parseFloat(item.total),
-          count: parseInt(item.count),
-          average: parseFloat(item.average),
+        incomesMap.set(item.month, {
+          total: item.total,
+          count: item.count,
+          average: item.average,
         });
       });
 
       monthlyExpenses.forEach((item) => {
-        expensesMap.set(parseInt(item.month), {
-          total: parseFloat(item.total),
-          count: parseInt(item.count),
-          average: parseFloat(item.average),
+        expensesMap.set(item.month, {
+          total: item.total,
+          count: item.count,
+          average: item.average,
         });
       });
 

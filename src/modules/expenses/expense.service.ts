@@ -1,7 +1,7 @@
 import { DateFilterDto } from '@common/dtos/date-filter.dto';
 import { Expense } from '@entities/expense.entity';
-import { Transaction } from '@entities/transaction.entity';
 import { User } from '@entities/user.entity';
+import { PluggyTransactionService } from '@modules/pluggy/pluggy-transactions/pluggy-transaction.service';
 import {
   Injectable,
   InternalServerErrorException,
@@ -18,8 +18,7 @@ export class ExpenseService {
   constructor(
     @InjectRepository(Expense)
     private readonly repo: Repository<Expense>,
-    @InjectRepository(Transaction)
-    private readonly transactionRepo: Repository<Transaction>,
+    private readonly pluggyTransactionService: PluggyTransactionService,
     private readonly logger: Logger,
   ) {}
 
@@ -40,41 +39,17 @@ export class ExpenseService {
   async findAllByUser(user: User, filters?: DateFilterDto) {
     try {
       // Busca por transações reais do Pluggy
-      const txQuery = this.transactionRepo
-        .createQueryBuilder('transaction')
-        .where('transaction.userId = :userId', { userId: user.id })
-        .andWhere('transaction.type = :type', { type: 'EXPENSE' })
-        .andWhere('transaction.description != :description', {
-          description: 'Pagamento recebido',
-        })
-        .andWhere('transaction.category != :category', {
-          category: 'Same person transfer',
-        });
-
-      if (filters?.month !== undefined) {
-        txQuery.andWhere('EXTRACT(MONTH FROM transaction.date) = :month', {
-          month: filters.month,
-        });
-      }
-
-      if (filters?.year !== undefined) {
-        txQuery.andWhere('EXTRACT(YEAR FROM transaction.date) = :year', {
-          year: filters.year,
-        });
-      }
-
-      const transactions = await txQuery
-        .orderBy('transaction.date', 'DESC')
-        .getMany();
+      const pluggyResponse =
+        await this.pluggyTransactionService.getExpensesByUser(user, filters);
 
       const expensesResponse = [];
 
-      if (transactions.length > 0) {
+      if (pluggyResponse.length > 0) {
         expensesResponse.push(
-          ...transactions.map((tx) => ({
+          ...pluggyResponse.map((tx) => ({
             id: tx.id,
             description: tx.description,
-            amount: +tx.amount,
+            amount: +tx.amount * -1,
             date: tx.date,
             category: tx.category,
             source: 'PLUGGY',
@@ -88,7 +63,7 @@ export class ExpenseService {
 
       filters?.month !== undefined &&
         queryBuilder.andWhere('EXTRACT(MONTH FROM expense.date) = :month', {
-          month: filters.month,
+          month: filters.month + 1,
         });
       filters?.year !== undefined &&
         queryBuilder.andWhere('EXTRACT(YEAR FROM expense.date) = :year', {

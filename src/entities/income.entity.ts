@@ -21,5 +21,6 @@ export class Income {
   @ManyToOne(() => User, (user) => user.incomes)
   user: User;
 
+  @Column()
   category: string;
 }

@@ -1,5 +1,11 @@
+import { DateFilterDto } from '@common/dtos/date-filter.dto';
 import { Transaction } from '@entities/transaction.entity';
-import { Injectable, Logger } from '@nestjs/common';
+import { User } from '@entities/user.entity';
+import {
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import axios from 'axios';
 import { Repository } from 'typeorm';
@@ -73,5 +79,263 @@ export class PluggyTransactionService {
     }
 
     return all;
+  }
+
+  async getIncomesByUser(user: User, filters?: DateFilterDto) {
+    try {
+      const queryBuilder = this.transactionRepo
+        .createQueryBuilder('transaction')
+        .where('transaction.userId = :userId', { userId: user.id })
+        .andWhere('transaction.type = :type', { type: 'INCOME' });
+
+      if (filters?.month !== undefined) {
+        queryBuilder.andWhere('EXTRACT(MONTH FROM transaction.date) = :month', {
+          month: filters.month + 1,
+        });
+      }
+
+      if (filters?.year !== undefined) {
+        queryBuilder.andWhere('EXTRACT(YEAR FROM transaction.date) = :year', {
+          year: filters.year,
+        });
+      }
+
+      return await queryBuilder.getMany();
+    } catch (error) {
+      this.logger.error('Error fetching incomes:', error);
+      throw error;
+    }
+  }
+
+  async getExpensesByUser(user: User, filters?: DateFilterDto) {
+    try {
+      const txQuery = this.transactionRepo
+        .createQueryBuilder('transaction')
+        .where('transaction.userId = :userId', { userId: user.id })
+        .andWhere('transaction.type = :type', { type: 'EXPENSE' })
+        .andWhere('transaction.description != :description', {
+          description: 'Pagamento recebido',
+        })
+        .andWhere('transaction.category != :category', {
+          category: 'Same person transfer',
+        });
+
+      if (filters?.month !== undefined) {
+        txQuery.andWhere('EXTRACT(MONTH FROM transaction.date) = :month', {
+          month: filters.month + 1,
+        });
+      }
+
+      if (filters?.year !== undefined) {
+        txQuery.andWhere('EXTRACT(YEAR FROM transaction.date) = :year', {
+          year: filters.year,
+        });
+      }
+
+      return await txQuery.orderBy('transaction.date', 'DESC').getMany();
+    } catch (error) {
+      this.logger.error('Error fetching incomes:', error);
+      throw error;
+    }
+  }
+
+  async getMonthlySummary(user: User, year: number) {
+    const pluggyIncomesByMonth = await this.transactionRepo
+      .createQueryBuilder('transaction')
+      .select([
+        'EXTRACT(MONTH FROM transaction.date) as month',
+        'COALESCE(SUM(transaction.amount), 0) as total',
+      ])
+      .where('transaction.userId = :userId', { userId: user.id })
+      .andWhere('transaction.type = :type', { type: 'INCOME' })
+      .andWhere('EXTRACT(YEAR FROM transaction.date) = :year', { year })
+      .groupBy('EXTRACT(MONTH FROM transaction.date)')
+      .orderBy('month', 'ASC')
+      .getRawMany();
+
+    const pluggyExpensesByMonth = await this.transactionRepo
+      .createQueryBuilder('transaction')
+      .select([
+        'EXTRACT(MONTH FROM transaction.date) as month',
+        'COALESCE(SUM(transaction.amount), 0) as total',
+      ])
+      .where('transaction.userId = :userId', { userId: user.id })
+      .andWhere('transaction.type = :type', { type: 'EXPENSE' })
+      .andWhere('EXTRACT(YEAR FROM transaction.date) = :year', { year })
+      .groupBy('EXTRACT(MONTH FROM transaction.date)')
+      .orderBy('month', 'ASC')
+      .getRawMany();
+
+    return { pluggyIncomesByMonth, pluggyExpensesByMonth };
+  }
+
+  async getMonthlyPluggyDataForExport(user: User, year: number, month: number) {
+    try {
+      // Buscar receitas do mês
+      const pluggyIncomesByMonth = await this.transactionRepo
+        .createQueryBuilder('transaction')
+        .where('transaction.userId = :userId', { userId: user.id })
+        .andWhere('transaction.type = :type', { type: 'INCOME' })
+        .andWhere('EXTRACT(YEAR FROM transaction.date) = :year', { year })
+        .andWhere('EXTRACT(MONTH FROM transaction.date) = :month', {
+          month,
+        })
+        .orderBy('transaction.date', 'ASC')
+        .getMany();
+
+      // Buscar despesas do mês
+      const pluggyExpensesByMonth = await this.transactionRepo
+        .createQueryBuilder('transaction')
+        .where('transaction.userId = :userId', { userId: user.id })
+        .andWhere('transaction.type = :type', { type: 'EXPENSE' })
+        .andWhere('EXTRACT(YEAR FROM transaction.date) = :year', { year })
+        .andWhere('EXTRACT(MONTH FROM transaction.date) = :month', {
+          month,
+        })
+        .orderBy('transaction.date', 'ASC')
+        .getMany();
+
+      return { pluggyIncomesByMonth, pluggyExpensesByMonth };
+    } catch (err) {
+      this.logger.error('Erro ao buscar dados mensais para exportação', {
+        error: err,
+        userId: user.id,
+        year,
+        month,
+      });
+      throw new InternalServerErrorException(
+        'Erro ao buscar dados no Pluggy para exportação.',
+      );
+    }
+  }
+
+  async getMonthlyPluggyDataByCategory(
+    user: User,
+    year: number,
+    month: number,
+  ): Promise<{
+    incomesByCategory: { categoryName: string; total: number; count: number }[];
+    expensesByCategory: {
+      categoryName: string;
+      total: number;
+      count: number;
+    }[];
+  }> {
+    try {
+      const query = this.transactionRepo
+        .createQueryBuilder('transaction')
+        .select([
+          'transaction.category as "categoryName"',
+          'transaction.type as type',
+          'COALESCE(SUM(transaction.amount), 0) as total',
+          'COUNT(transaction.id) as count',
+        ])
+        .where('transaction.userId = :userId', { userId: user.id })
+        .andWhere('EXTRACT(YEAR FROM transaction.date) = :year', { year })
+        .andWhere('EXTRACT(MONTH FROM transaction.date) = :month', { month })
+        .groupBy('transaction.category, transaction.type')
+        .orderBy('total', 'DESC');
+
+      const results = await query.getRawMany();
+
+      const incomesByCategory = results
+        .filter((r) => r.type === 'INCOME')
+        .map((r) => ({
+          categoryName: r.categoryName,
+          total: parseFloat(r.total),
+          count: parseInt(r.count),
+        }));
+
+      const expensesByCategory = results
+        .filter((r) => r.type === 'EXPENSE')
+        .map((r) => ({
+          categoryName: r.categoryName,
+          total: parseFloat(r.total) * -1,
+          count: parseInt(r.count),
+        }));
+
+      return { incomesByCategory, expensesByCategory };
+    } catch (err) {
+      this.logger.error(
+        'Erro ao buscar dados por categoria nas transações do Pluggy',
+        {
+          error: err,
+          userId: user.id,
+          year,
+          month,
+        },
+      );
+      throw new InternalServerErrorException(
+        'Erro ao buscar dados por categoria nas transações do Pluggy.',
+      );
+    }
+  }
+
+  async getYearlyEvolutionDataFromPluggy(
+    user: User,
+    year: number,
+  ): Promise<{
+    monthlyIncomes: {
+      month: number;
+      total: number;
+      count: number;
+      average: number;
+    }[];
+    monthlyExpenses: {
+      month: number;
+      total: number;
+      count: number;
+      average: number;
+    }[];
+  }> {
+    try {
+      const results = await this.transactionRepo
+        .createQueryBuilder('transaction')
+        .select([
+          'EXTRACT(MONTH FROM transaction.date) as "month"',
+          'transaction.type as "type"',
+          'COALESCE(SUM(transaction.amount), 0) as "total"',
+          'COUNT(transaction.id) as "count"',
+          'COALESCE(AVG(transaction.amount), 0) as "average"',
+        ])
+        .where('transaction.userId = :userId', { userId: user.id })
+        .andWhere('EXTRACT(YEAR FROM transaction.date) = :year', { year })
+        .groupBy('EXTRACT(MONTH FROM transaction.date), transaction.type')
+        .orderBy('month', 'ASC')
+        .addOrderBy('type', 'ASC')
+        .getRawMany();
+
+      const monthlyIncomes = results
+        .filter((r) => r.type === 'INCOME')
+        .map((r) => ({
+          month: parseInt(r.month),
+          total: parseFloat(r.total),
+          count: parseInt(r.count),
+          average: parseFloat(r.average),
+        }));
+
+      const monthlyExpenses = results
+        .filter((r) => r.type === 'EXPENSE')
+        .map((r) => ({
+          month: parseInt(r.month),
+          total: parseFloat(r.total) * -1,
+          count: parseInt(r.count),
+          average: parseFloat(r.average),
+        }));
+
+      return { monthlyIncomes, monthlyExpenses };
+    } catch (err) {
+      this.logger.error(
+        'Erro ao buscar evolução anual nas transações do Pluggy',
+        {
+          error: err,
+          userId: user.id,
+          year,
+        },
+      );
+      throw new InternalServerErrorException(
+        'Erro ao buscar evolução anual nas transações do Pluggy.',
+      );
+    }
   }
 }
