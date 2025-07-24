@@ -75,12 +75,12 @@ export class SummaryService {
       const expensesMap = new Map<number, number>();
       expensesByMonth.forEach(({ month, total }) => {
         const m = parseInt(month);
-        expensesMap.set(m, parseFloat(total));
+        expensesMap.set(m, Math.abs(parseFloat(total)));
       });
       pluggyExpensesByMonth.forEach(({ month, total }) => {
         const m = parseInt(month.toString()); // garante que seja string
         const existing = expensesMap.get(m) || 0;
-        const amount = parseFloat(total.toString()) * -1;
+        const amount = Math.abs(parseFloat(total.toString()));
         expensesMap.set(m, existing + amount);
       });
 
@@ -95,7 +95,7 @@ export class SummaryService {
           month,
           totalIncomes,
           totalExpenses,
-          balance: totalIncomes - totalExpenses,
+          balance: parseFloat((totalIncomes - totalExpenses).toFixed(2)),
         });
       }
 
@@ -121,10 +121,20 @@ export class SummaryService {
 
       return {
         year,
-        monthlySummaries,
-        totalYearIncomes,
-        totalYearExpenses,
-        yearBalance: totalYearIncomes - totalYearExpenses,
+        // arredonda para duas casas decimais
+        monthlySummaries: monthlySummaries.map((month) => ({
+          ...month,
+          totalIncomes: parseFloat(month.totalIncomes.toFixed(2)),
+          totalExpenses: parseFloat(month.totalExpenses.toFixed(2)),
+          balance: parseFloat(
+            (month.totalIncomes - month.totalExpenses).toFixed(2),
+          ),
+        })),
+        totalYearIncomes: parseFloat(totalYearIncomes.toFixed(2)),
+        totalYearExpenses: parseFloat(totalYearExpenses.toFixed(2)),
+        yearBalance: parseFloat(
+          (totalYearIncomes - totalYearExpenses).toFixed(2),
+        ),
       };
     } catch (err) {
       this.logger.error('Erro ao buscar resumo anual', { error: err });

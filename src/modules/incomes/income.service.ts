@@ -82,8 +82,20 @@ export class IncomeService {
           year: filters.year,
         });
 
+      const manualIncomes = await queryBuilder
+        .orderBy('income.startDate', 'DESC')
+        .getMany();
       incomesResponse.push(
-        ...(await queryBuilder.orderBy('income.startDate', 'DESC').getMany()),
+        ...manualIncomes.map((income) => ({
+          id: income.id,
+          itemId: null,
+          type: 'INCOME',
+          description: income.description,
+          amount: +income.amount,
+          date: income.startDate,
+          category: income.category,
+          source: 'MANUAL',
+        })),
       );
 
       return incomesResponse;

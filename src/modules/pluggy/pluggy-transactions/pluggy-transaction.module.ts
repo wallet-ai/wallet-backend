@@ -1,3 +1,4 @@
+import { Account } from '@entities/account.entity';
 import { Transaction } from '@entities/transaction.entity';
 import { FirebaseModule } from '@modules/firebase/firebase.module';
 import { PluggyTransactionController } from '@modules/pluggy/pluggy-transactions/pluggy-transaction.controller';
@@ -8,7 +9,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Transaction]),
+    TypeOrmModule.forFeature([Transaction, Account]),
     FirebaseModule,
     UserModule,
   ],

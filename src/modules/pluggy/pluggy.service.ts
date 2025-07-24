@@ -1,10 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import axios, { AxiosError } from 'axios';
+import { ApiTokenUtil } from 'utils/getApiTokenUtil';
 
 @Injectable()
 export class PluggyService {
   private readonly logger = new Logger(PluggyService.name);
-  private readonly API_KEY = process.env.PLUGGY_API_KEY;
   async createUser(): Promise<string> {
     try {
       const res = await axios.post(
@@ -32,13 +32,13 @@ export class PluggyService {
 
   async createConnectToken(): Promise<string> {
     try {
-      console.log('chave = ', process.env.PLUGGY_API_KEY);
+      const apiKey = await ApiTokenUtil.generatePluggyApiKey();
       const res = await axios.post(
         'https://api.pluggy.ai/connect_token',
         {}, // corpo vazio ou com campos opcionais, como clientUserId
         {
           headers: {
-            'X-API-KEY': process.env.PLUGGY_API_KEY || '',
+            'X-API-KEY': apiKey,
             'Content-Type': 'application/json',
           },
         },

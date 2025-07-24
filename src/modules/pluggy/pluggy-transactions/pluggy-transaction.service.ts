@@ -1,6 +1,8 @@
 import { DateFilterDto } from '@common/dtos/date-filter.dto';
+import { Account } from '@entities/account.entity';
 import { Transaction } from '@entities/transaction.entity';
 import { User } from '@entities/user.entity';
+import { EXCLUDED_CATEGORIES } from '@modules/pluggy/pluggy-transactions/pluggy-transaction.util';
 import {
   Injectable,
   InternalServerErrorException,
@@ -9,6 +11,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import axios from 'axios';
 import { Repository } from 'typeorm';
+import { ApiTokenUtil } from 'utils/getApiTokenUtil';
 
 @Injectable()
 export class PluggyTransactionService {
@@ -17,13 +20,16 @@ export class PluggyTransactionService {
   constructor(
     @InjectRepository(Transaction)
     private readonly transactionRepo: Repository<Transaction>,
+    @InjectRepository(Account)
+    private readonly accountRepo: Repository<Account>,
   ) {}
 
   async fetchAndSaveTransactions(
     itemId: string,
     userId: number,
   ): Promise<Transaction[]> {
-    const apiKey = process.env.PLUGGY_API_KEY;
+    const apiKey = await ApiTokenUtil.generatePluggyApiKey();
+    const all: Transaction[] = [];
 
     // 1. Buscar lista de categorias com tradução
     const categoriesRes = await axios.get('https://api.pluggy.ai/categories', {
@@ -32,12 +38,6 @@ export class PluggyTransactionService {
 
     const categoryMap = new Map<string, string>();
     for (const cat of categoriesRes.data.results) {
-      console.log(
-        'Categoria:',
-        cat.description,
-        'Tradução:',
-        cat.descriptionTranslated,
-      );
       categoryMap.set(cat.description, cat.descriptionTranslated);
     }
 
@@ -49,9 +49,29 @@ export class PluggyTransactionService {
       },
     );
 
-    const all: Transaction[] = [];
-
     for (const account of accountRes.data.results) {
+      // 2.1. Salvar a conta se ainda não existir
+      let localAccount = await this.accountRepo.findOneBy({
+        pluggyAccountId: account.id,
+      });
+
+      if (!localAccount) {
+        localAccount = this.accountRepo.create({
+          pluggyAccountId: account.id,
+          userId,
+          name: account.name,
+          type: account.type,
+          subtype: account.subtype,
+          number: account.number,
+          institutionName: account.institution?.name || null,
+          balance: account.balance,
+          availableBalance: account.availableBalance,
+        });
+
+        await this.accountRepo.save(localAccount);
+      }
+
+      // 3. Buscar transações paginadas por conta
       let page = 1;
 
       while (true) {
@@ -70,12 +90,12 @@ export class PluggyTransactionService {
           const exists = await this.transactionRepo.findOneBy({
             pluggyTransactionId: tx.id,
           });
+
           if (exists) {
             all.push(exists);
             continue;
           }
 
-          // 3. Traduzir a categoria se existir
           const translatedCategory =
             categoryMap.get(tx.category) || tx.category;
 
@@ -87,6 +107,7 @@ export class PluggyTransactionService {
             type: tx.amount > 0 ? 'INCOME' : 'EXPENSE',
             category: translatedCategory,
             accountId: account.id,
+            account: localAccount,
             itemId,
             user: { id: userId },
           });
@@ -106,8 +127,13 @@ export class PluggyTransactionService {
     try {
       const queryBuilder = this.transactionRepo
         .createQueryBuilder('transaction')
+        .leftJoin('transaction.account', 'account') // JOIN com a conta
         .where('transaction.userId = :userId', { userId: user.id })
-        .andWhere('transaction.type = :type', { type: 'INCOME' });
+        .andWhere('transaction.type = :type', { type: 'INCOME' })
+        .andWhere('account.type != :creditType', { creditType: 'CREDIT' }) // Exclui contas de cartão
+        .andWhere('transaction.category NOT IN (:...excludedCategories)', {
+          excludedCategories: EXCLUDED_CATEGORIES,
+        });
 
       if (filters?.month !== undefined) {
         queryBuilder.andWhere('EXTRACT(MONTH FROM transaction.date) = :month', {
@@ -130,91 +156,206 @@ export class PluggyTransactionService {
 
   async getExpensesByUser(user: User, filters?: DateFilterDto) {
     try {
-      const txQuery = this.transactionRepo
+      // 1. Despesas reais (type = EXPENSE, conta não é crédito)
+      const query1 = this.transactionRepo
         .createQueryBuilder('transaction')
+        .leftJoinAndSelect('transaction.account', 'account')
         .where('transaction.userId = :userId', { userId: user.id })
         .andWhere('transaction.type = :type', { type: 'EXPENSE' })
+        .andWhere('account.type != :creditType', { creditType: 'CREDIT' })
         .andWhere('transaction.description != :description', {
-          description: 'Pagamento recebido',
+          description: 'Pagamento de fatura',
         })
-        .andWhere('transaction.category != :category', {
-          category: 'Same person transfer',
+        .andWhere('transaction.category NOT IN (:...excludedCategories)', {
+          excludedCategories: EXCLUDED_CATEGORIES,
+        });
+
+      // 2. Compras no crédito (type = INCOME em conta CREDIT)
+      const query2 = this.transactionRepo
+        .createQueryBuilder('transaction')
+        .leftJoinAndSelect('transaction.account', 'account')
+        .where('transaction.userId = :userId', { userId: user.id })
+        .andWhere('transaction.type = :type', { type: 'INCOME' })
+        .andWhere('account.type = :creditType', { creditType: 'CREDIT' })
+        .andWhere('transaction.category NOT IN (:...excludedCategories)', {
+          excludedCategories: EXCLUDED_CATEGORIES,
         });
 
       if (filters?.month !== undefined) {
-        txQuery.andWhere('EXTRACT(MONTH FROM transaction.date) = :month', {
-          month: filters.month + 1,
+        const month = filters.month + 1;
+        query1.andWhere('EXTRACT(MONTH FROM transaction.date) = :month', {
+          month,
+        });
+        query2.andWhere('EXTRACT(MONTH FROM transaction.date) = :month', {
+          month,
         });
       }
 
       if (filters?.year !== undefined) {
-        txQuery.andWhere('EXTRACT(YEAR FROM transaction.date) = :year', {
-          year: filters.year,
+        const year = filters.year;
+        query1.andWhere('EXTRACT(YEAR FROM transaction.date) = :year', {
+          year,
+        });
+        query2.andWhere('EXTRACT(YEAR FROM transaction.date) = :year', {
+          year,
         });
       }
 
-      return await txQuery.orderBy('transaction.date', 'DESC').getMany();
+      const [expenses, creditPurchases] = await Promise.all([
+        query1.getMany(),
+        query2.getMany(),
+      ]);
+
+      const allExpenses = [...expenses, ...creditPurchases].sort(
+        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+      );
+
+      return allExpenses;
     } catch (error) {
-      this.logger.error('Error fetching incomes:', error);
+      this.logger.error('Error fetching expenses:', error);
       throw error;
     }
   }
 
   async getMonthlySummary(user: User, year: number) {
+    // Receitas: INCOME em contas que NÃO são CREDIT + não estão em categorias excluídas
     const pluggyIncomesByMonth = await this.transactionRepo
       .createQueryBuilder('transaction')
+      .leftJoin('transaction.account', 'account')
       .select([
         'EXTRACT(MONTH FROM transaction.date) as month',
         'COALESCE(SUM(transaction.amount), 0) as total',
       ])
       .where('transaction.userId = :userId', { userId: user.id })
       .andWhere('transaction.type = :type', { type: 'INCOME' })
+      .andWhere('account.type != :creditType', { creditType: 'CREDIT' })
+      .andWhere('transaction.category NOT IN (:...excludedCategories)', {
+        excludedCategories: EXCLUDED_CATEGORIES,
+      })
       .andWhere('EXTRACT(YEAR FROM transaction.date) = :year', { year })
       .groupBy('EXTRACT(MONTH FROM transaction.date)')
       .orderBy('month', 'ASC')
       .getRawMany();
 
-    const pluggyExpensesByMonth = await this.transactionRepo
+    // Despesas:
+    // 1. EXPENSE em contas que NÃO são CREDIT
+    // 2. INCOME em contas do tipo CREDIT (compra no crédito)
+    const pluggyExpenses1 = this.transactionRepo
       .createQueryBuilder('transaction')
+      .leftJoin('transaction.account', 'account')
       .select([
         'EXTRACT(MONTH FROM transaction.date) as month',
         'COALESCE(SUM(transaction.amount), 0) as total',
       ])
       .where('transaction.userId = :userId', { userId: user.id })
       .andWhere('transaction.type = :type', { type: 'EXPENSE' })
+      .andWhere('account.type != :creditType', { creditType: 'CREDIT' })
+      .andWhere('transaction.description != :description', {
+        description: 'Pagamento de fatura',
+      })
+      .andWhere('transaction.category NOT IN (:...excludedCategories)', {
+        excludedCategories: EXCLUDED_CATEGORIES,
+      })
       .andWhere('EXTRACT(YEAR FROM transaction.date) = :year', { year })
-      .groupBy('EXTRACT(MONTH FROM transaction.date)')
-      .orderBy('month', 'ASC')
-      .getRawMany();
+      .groupBy('EXTRACT(MONTH FROM transaction.date)');
+
+    const pluggyExpenses2 = this.transactionRepo
+      .createQueryBuilder('transaction')
+      .leftJoin('transaction.account', 'account')
+      .select([
+        'EXTRACT(MONTH FROM transaction.date) as month',
+        'COALESCE(SUM(transaction.amount), 0) as total',
+      ])
+      .where('transaction.userId = :userId', { userId: user.id })
+      .andWhere('transaction.type = :type', { type: 'INCOME' })
+      .andWhere('account.type = :creditType', { creditType: 'CREDIT' })
+      .andWhere('transaction.category NOT IN (:...excludedCategories)', {
+        excludedCategories: EXCLUDED_CATEGORIES,
+      })
+      .andWhere('EXTRACT(YEAR FROM transaction.date) = :year', { year })
+      .groupBy('EXTRACT(MONTH FROM transaction.date)');
+
+    const [res1, res2] = await Promise.all([
+      pluggyExpenses1.getRawMany(),
+      pluggyExpenses2.getRawMany(),
+    ]);
+
+    // Unir despesas (e inverter o sinal, pois INCOME em conta CREDIT ainda vem positivo)
+    const expenseMap = new Map<number, number>();
+
+    for (const r of [...res1, ...res2]) {
+      const month = parseInt(r.month);
+      const value = Math.abs(parseFloat(r.total));
+      const current = expenseMap.get(month) || 0;
+      expenseMap.set(month, current + value);
+    }
+
+    const pluggyExpensesByMonth = Array.from(expenseMap.entries()).map(
+      ([month, total]) => ({
+        month,
+        total,
+      }),
+    );
 
     return { pluggyIncomesByMonth, pluggyExpensesByMonth };
   }
 
   async getMonthlyPluggyDataForExport(user: User, year: number, month: number) {
     try {
-      // Buscar receitas do mês
+      // Receitas: INCOME em contas que não são CREDIT
       const pluggyIncomesByMonth = await this.transactionRepo
         .createQueryBuilder('transaction')
+        .leftJoinAndSelect('transaction.account', 'account')
         .where('transaction.userId = :userId', { userId: user.id })
         .andWhere('transaction.type = :type', { type: 'INCOME' })
-        .andWhere('EXTRACT(YEAR FROM transaction.date) = :year', { year })
-        .andWhere('EXTRACT(MONTH FROM transaction.date) = :month', {
-          month,
+        .andWhere('account.type != :creditType', { creditType: 'CREDIT' })
+        .andWhere('transaction.category NOT IN (:...excludedCategories)', {
+          excludedCategories: EXCLUDED_CATEGORIES,
         })
+        .andWhere('EXTRACT(YEAR FROM transaction.date) = :year', { year })
+        .andWhere('EXTRACT(MONTH FROM transaction.date) = :month', { month })
         .orderBy('transaction.date', 'ASC')
         .getMany();
 
-      // Buscar despesas do mês
-      const pluggyExpensesByMonth = await this.transactionRepo
+      // Despesas:
+      // 1. EXPENSE em conta que não é CREDIT
+      const query1 = this.transactionRepo
         .createQueryBuilder('transaction')
+        .leftJoinAndSelect('transaction.account', 'account')
         .where('transaction.userId = :userId', { userId: user.id })
         .andWhere('transaction.type = :type', { type: 'EXPENSE' })
-        .andWhere('EXTRACT(YEAR FROM transaction.date) = :year', { year })
-        .andWhere('EXTRACT(MONTH FROM transaction.date) = :month', {
-          month,
+        .andWhere('account.type != :creditType', { creditType: 'CREDIT' })
+        .andWhere('transaction.description != :description', {
+          description: 'Pagamento de fatura',
         })
-        .orderBy('transaction.date', 'ASC')
-        .getMany();
+        .andWhere('transaction.category NOT IN (:...excludedCategories)', {
+          excludedCategories: EXCLUDED_CATEGORIES,
+        })
+        .andWhere('EXTRACT(YEAR FROM transaction.date) = :year', { year })
+        .andWhere('EXTRACT(MONTH FROM transaction.date) = :month', { month });
+
+      // 2. INCOME em conta do tipo CREDIT (compra no crédito)
+      const query2 = this.transactionRepo
+        .createQueryBuilder('transaction')
+        .leftJoinAndSelect('transaction.account', 'account')
+        .where('transaction.userId = :userId', { userId: user.id })
+        .andWhere('transaction.type = :type', { type: 'INCOME' })
+        .andWhere('account.type = :creditType', { creditType: 'CREDIT' })
+        .andWhere('transaction.category NOT IN (:...excludedCategories)', {
+          excludedCategories: EXCLUDED_CATEGORIES,
+        })
+        .andWhere('EXTRACT(YEAR FROM transaction.date) = :year', { year })
+        .andWhere('EXTRACT(MONTH FROM transaction.date) = :month', { month });
+
+      const [res1, res2] = await Promise.all([
+        query1.getMany(),
+        query2.getMany(),
+      ]);
+
+      const pluggyExpensesByMonth = [...res1, ...res2].map((tx) => ({
+        ...tx,
+        amount: Math.abs(Number(tx.amount)),
+      }));
 
       return { pluggyIncomesByMonth, pluggyExpensesByMonth };
     } catch (err) {
@@ -243,37 +384,96 @@ export class PluggyTransactionService {
     }[];
   }> {
     try {
-      const query = this.transactionRepo
+      // INCOME em contas que não são CREDIT → RECEITA
+      const incomes = await this.transactionRepo
         .createQueryBuilder('transaction')
+        .leftJoin('transaction.account', 'account')
         .select([
-          'transaction.category as "categoryName"',
-          'transaction.type as type',
+          'transaction.category as categoryName',
           'COALESCE(SUM(transaction.amount), 0) as total',
           'COUNT(transaction.id) as count',
         ])
         .where('transaction.userId = :userId', { userId: user.id })
+        .andWhere('transaction.type = :type', { type: 'INCOME' })
+        .andWhere('account.type != :creditType', { creditType: 'CREDIT' })
+        .andWhere('transaction.category NOT IN (:...excludedCategories)', {
+          excludedCategories: EXCLUDED_CATEGORIES,
+        })
         .andWhere('EXTRACT(YEAR FROM transaction.date) = :year', { year })
         .andWhere('EXTRACT(MONTH FROM transaction.date) = :month', { month })
-        .groupBy('transaction.category, transaction.type')
-        .orderBy('total', 'DESC');
+        .groupBy('transaction.category')
+        .getRawMany();
 
-      const results = await query.getRawMany();
+      // EXPENSE em conta != CREDIT e INCOME em conta == CREDIT → DESPESA
+      const expenses1 = this.transactionRepo
+        .createQueryBuilder('transaction')
+        .leftJoin('transaction.account', 'account')
+        .select([
+          'transaction.category as categoryName',
+          'COALESCE(SUM(transaction.amount), 0) as total',
+          'COUNT(transaction.id) as count',
+        ])
+        .where('transaction.userId = :userId', { userId: user.id })
+        .andWhere('transaction.type = :type', { type: 'EXPENSE' })
+        .andWhere('account.type != :creditType', { creditType: 'CREDIT' })
+        .andWhere('transaction.description != :description', {
+          description: 'Pagamento de fatura',
+        })
+        .andWhere('transaction.category NOT IN (:...excludedCategories)', {
+          excludedCategories: EXCLUDED_CATEGORIES,
+        })
+        .andWhere('EXTRACT(YEAR FROM transaction.date) = :year', { year })
+        .andWhere('EXTRACT(MONTH FROM transaction.date) = :month', { month })
+        .groupBy('transaction.category');
 
-      const incomesByCategory = results
-        .filter((r) => r.type === 'INCOME')
-        .map((r) => ({
-          categoryName: r.categoryName,
-          total: parseFloat(r.total),
-          count: parseInt(r.count),
-        }));
+      const expenses2 = this.transactionRepo
+        .createQueryBuilder('transaction')
+        .leftJoin('transaction.account', 'account')
+        .select([
+          'transaction.category as categoryName',
+          'COALESCE(SUM(transaction.amount), 0) as total',
+          'COUNT(transaction.id) as count',
+        ])
+        .where('transaction.userId = :userId', { userId: user.id })
+        .andWhere('transaction.type = :type', { type: 'INCOME' }) // compra no crédito
+        .andWhere('account.type = :creditType', { creditType: 'CREDIT' })
+        .andWhere('transaction.category NOT IN (:...excludedCategories)', {
+          excludedCategories: EXCLUDED_CATEGORIES,
+        })
+        .andWhere('EXTRACT(YEAR FROM transaction.date) = :year', { year })
+        .andWhere('EXTRACT(MONTH FROM transaction.date) = :month', { month })
+        .groupBy('transaction.category');
 
-      const expensesByCategory = results
-        .filter((r) => r.type === 'EXPENSE')
-        .map((r) => ({
-          categoryName: r.categoryName,
-          total: parseFloat(r.total) * -1,
-          count: parseInt(r.count),
-        }));
+      const [expensesRes1, expensesRes2] = await Promise.all([
+        expenses1.getRawMany(),
+        expenses2.getRawMany(),
+      ]);
+
+      // Agrupamento combinado
+      const expenseMap = new Map<string, { total: number; count: number }>();
+
+      [...expensesRes1, ...expensesRes2].forEach((e) => {
+        const key = e.categoryname || 'Sem categoria';
+        const existing = expenseMap.get(key) || { total: 0, count: 0 };
+        expenseMap.set(key, {
+          total: existing.total + parseFloat(e.total),
+          count: existing.count + parseInt(e.count),
+        });
+      });
+
+      const expensesByCategory = Array.from(expenseMap.entries()).map(
+        ([categoryName, data]) => ({
+          categoryName,
+          total: Math.abs(data.total), // inverter sinal
+          count: data.count,
+        }),
+      );
+
+      const incomesByCategory = incomes.map((r) => ({
+        categoryName: r.categoryname,
+        total: parseFloat(r.total),
+        count: parseInt(r.count),
+      }));
 
       return { incomesByCategory, expensesByCategory };
     } catch (err) {
@@ -310,39 +510,104 @@ export class PluggyTransactionService {
     }[];
   }> {
     try {
-      const results = await this.transactionRepo
+      const incomeQuery = this.transactionRepo
         .createQueryBuilder('transaction')
+        .leftJoin('transaction.account', 'account')
         .select([
-          'EXTRACT(MONTH FROM transaction.date) as "month"',
-          'transaction.type as "type"',
-          'COALESCE(SUM(transaction.amount), 0) as "total"',
-          'COUNT(transaction.id) as "count"',
-          'COALESCE(AVG(transaction.amount), 0) as "average"',
+          'EXTRACT(MONTH FROM transaction.date) as month',
+          'SUM(transaction.amount) as total',
+          'COUNT(transaction.id) as count',
+          'AVG(transaction.amount) as average',
         ])
         .where('transaction.userId = :userId', { userId: user.id })
+        .andWhere('transaction.type = :type', { type: 'INCOME' })
+        .andWhere('account.type != :creditType', { creditType: 'CREDIT' })
+        .andWhere('transaction.category NOT IN (:...excludedCategories)', {
+          excludedCategories: EXCLUDED_CATEGORIES,
+        })
         .andWhere('EXTRACT(YEAR FROM transaction.date) = :year', { year })
-        .groupBy('EXTRACT(MONTH FROM transaction.date), transaction.type')
-        .orderBy('month', 'ASC')
-        .addOrderBy('type', 'ASC')
-        .getRawMany();
+        .groupBy('month');
 
-      const monthlyIncomes = results
-        .filter((r) => r.type === 'INCOME')
-        .map((r) => ({
+      const expenseQuery1 = this.transactionRepo
+        .createQueryBuilder('transaction')
+        .leftJoin('transaction.account', 'account')
+        .select([
+          'EXTRACT(MONTH FROM transaction.date) as month',
+          'SUM(transaction.amount) as total',
+          'COUNT(transaction.id) as count',
+          'AVG(transaction.amount) as average',
+        ])
+        .where('transaction.userId = :userId', { userId: user.id })
+        .andWhere('transaction.type = :type', { type: 'EXPENSE' })
+        .andWhere('account.type != :creditType', { creditType: 'CREDIT' })
+        .andWhere('transaction.description != :description', {
+          description: 'Pagamento de fatura',
+        })
+        .andWhere('transaction.category NOT IN (:...excludedCategories)', {
+          excludedCategories: EXCLUDED_CATEGORIES,
+        })
+        .andWhere('EXTRACT(YEAR FROM transaction.date) = :year', { year })
+        .groupBy('month');
+
+      const expenseQuery2 = this.transactionRepo
+        .createQueryBuilder('transaction')
+        .leftJoin('transaction.account', 'account')
+        .select([
+          'EXTRACT(MONTH FROM transaction.date) as month',
+          'SUM(transaction.amount) as total',
+          'COUNT(transaction.id) as count',
+          'AVG(transaction.amount) as average',
+        ])
+        .where('transaction.userId = :userId', { userId: user.id })
+        .andWhere('transaction.type = :type', { type: 'INCOME' }) // compra no crédito
+        .andWhere('account.type = :creditType', { creditType: 'CREDIT' })
+        .andWhere('transaction.category NOT IN (:...excludedCategories)', {
+          excludedCategories: EXCLUDED_CATEGORIES,
+        })
+        .andWhere('EXTRACT(YEAR FROM transaction.date) = :year', { year })
+        .groupBy('month');
+
+      const [rawIncomes, rawExpenses1, rawExpenses2] = await Promise.all([
+        incomeQuery.getRawMany(),
+        expenseQuery1.getRawMany(),
+        expenseQuery2.getRawMany(),
+      ]);
+
+      const parseResults = (arr: any[]) =>
+        arr.map((r) => ({
           month: parseInt(r.month),
           total: parseFloat(r.total),
           count: parseInt(r.count),
           average: parseFloat(r.average),
         }));
 
-      const monthlyExpenses = results
-        .filter((r) => r.type === 'EXPENSE')
-        .map((r) => ({
-          month: parseInt(r.month),
-          total: parseFloat(r.total) * -1,
-          count: parseInt(r.count),
-          average: parseFloat(r.average),
-        }));
+      // Agrupar receitas
+      const monthlyIncomes = parseResults(rawIncomes);
+
+      // Agrupar despesas (query 1 + query 2)
+      const combinedExpenses = [...rawExpenses1, ...rawExpenses2];
+      const tempMap = new Map<number, { total: number; count: number }>();
+
+      combinedExpenses.forEach((r) => {
+        const month = parseInt(r.month);
+        const total = Math.abs(parseFloat(r.total));
+        const count = parseInt(r.count);
+
+        const existing = tempMap.get(month) || { total: 0, count: 0 };
+        tempMap.set(month, {
+          total: existing.total + total,
+          count: existing.count + count,
+        });
+      });
+
+      const monthlyExpenses = Array.from(tempMap.entries()).map(
+        ([month, data]) => ({
+          month,
+          total: Math.abs(data.total),
+          count: data.count,
+          average: data.count > 0 ? Math.abs(data.total / data.count) : 0,
+        }),
+      );
 
       return { monthlyIncomes, monthlyExpenses };
     } catch (err) {

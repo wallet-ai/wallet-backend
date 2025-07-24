@@ -50,7 +50,7 @@ export class ExpenseService {
             id: tx.id,
             itemId: tx.itemId,
             description: tx.description,
-            amount: +tx.amount * -1,
+            amount: Math.abs(tx.amount),
             date: tx.date,
             category: tx.category,
             source: 'PLUGGY',
