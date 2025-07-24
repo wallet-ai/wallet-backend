@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import axios from 'axios';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { ApiTokenUtil } from 'utils/getApiTokenUtil';
 
 @Injectable()
@@ -29,98 +29,111 @@ export class PluggyTransactionService {
     userId: number,
   ): Promise<Transaction[]> {
     const apiKey = await ApiTokenUtil.generatePluggyApiKey();
-    const all: Transaction[] = [];
 
-    // 1. Buscar lista de categorias com tradução
+    // 1. Buscar categorias traduzidas
     const categoriesRes = await axios.get('https://api.pluggy.ai/categories', {
       headers: { 'X-API-KEY': apiKey },
     });
-
-    const categoryMap = new Map<string, string>();
-    for (const cat of categoriesRes.data.results) {
-      categoryMap.set(cat.description, cat.descriptionTranslated);
-    }
-
-    // 2. Buscar contas do item
-    const accountRes = await axios.get(
-      `https://api.pluggy.ai/accounts?itemId=${itemId}`,
-      {
-        headers: { 'X-API-KEY': apiKey },
-      },
+    const categoryMap = new Map<string, string>(
+      categoriesRes.data.results.map((c: any) => [
+        c.description,
+        c.descriptionTranslated,
+      ]),
     );
 
-    for (const account of accountRes.data.results) {
-      // 2.1. Salvar a conta se ainda não existir
-      let localAccount = await this.accountRepo.findOneBy({
-        pluggyAccountId: account.id,
-      });
+    // 2. Buscar contas vinculadas ao item
+    const accountsRes = await axios.get(
+      `https://api.pluggy.ai/accounts?itemId=${itemId}`,
+      { headers: { 'X-API-KEY': apiKey } },
+    );
+    const pluggyAccounts: any[] = accountsRes.data.results;
 
-      if (!localAccount) {
-        localAccount = this.accountRepo.create({
-          pluggyAccountId: account.id,
+    // 2.1 Buscar contas já salvas
+    const pluggyAccountIds = pluggyAccounts.map((acc: any) => acc.id);
+    const existingAccounts = await this.accountRepo.findBy({
+      pluggyAccountId: In(pluggyAccountIds),
+    });
+    const accountMap = new Map<string, Account>(
+      existingAccounts.map((acc) => [acc.pluggyAccountId, acc]),
+    );
+
+    // 2.2 Criar novas contas
+    const newAccounts = pluggyAccounts
+      .filter((acc: any) => !accountMap.has(acc.id))
+      .map((acc: any) =>
+        this.accountRepo.create({
+          pluggyAccountId: acc.id,
           userId,
-          name: account.name,
-          type: account.type,
-          subtype: account.subtype,
-          number: account.number,
-          institutionName: account.institution?.name || null,
-          balance: account.balance,
-          availableBalance: account.availableBalance,
-        });
+          name: acc.name,
+          type: acc.type,
+          subtype: acc.subtype,
+          number: acc.number,
+          institutionName: acc.institution?.name || null,
+          balance: acc.balance,
+          availableBalance: acc.availableBalance,
+        }),
+      );
 
-        await this.accountRepo.save(localAccount);
-      }
+    const savedNewAccounts = await this.accountRepo.save(newAccounts);
+    for (const acc of savedNewAccounts) {
+      accountMap.set(acc.pluggyAccountId, acc);
+    }
 
-      // 3. Buscar transações paginadas por conta
+    // 3. Buscar todas as transações de todas as contas
+    const allTransactionsFromApi: { tx: any; account: Account }[] = [];
+    const allPluggyTransactionIds: string[] = [];
+
+    for (const pluggyAcc of pluggyAccounts) {
+      const localAcc = accountMap.get(pluggyAcc.id);
+      if (!localAcc) continue;
+
       let page = 1;
-
       while (true) {
         const res = await axios.get(
-          `https://api.pluggy.ai/transactions?accountId=${account.id}`,
+          `https://api.pluggy.ai/transactions?accountId=${pluggyAcc.id}`,
           {
             headers: { 'X-API-KEY': apiKey },
             params: { page, pageSize: 500 },
           },
         );
-
-        const { results } = res.data;
+        const results: any[] = res.data.results;
         if (!results.length) break;
 
         for (const tx of results) {
-          const exists = await this.transactionRepo.findOneBy({
-            pluggyTransactionId: tx.id,
-          });
-
-          if (exists) {
-            all.push(exists);
-            continue;
-          }
-
-          const translatedCategory =
-            categoryMap.get(tx.category) || tx.category;
-
-          const newTx = this.transactionRepo.create({
-            pluggyTransactionId: tx.id,
-            description: tx.description,
-            amount: tx.amount,
-            date: tx.date,
-            type: tx.amount > 0 ? 'INCOME' : 'EXPENSE',
-            category: translatedCategory,
-            accountId: account.id,
-            account: localAccount,
-            itemId,
-            user: { id: userId },
-          });
-
-          await this.transactionRepo.save(newTx);
-          all.push(newTx);
+          allTransactionsFromApi.push({ tx, account: localAcc });
+          allPluggyTransactionIds.push(tx.id);
         }
 
         page++;
       }
     }
 
-    return all;
+    // 4. Buscar transações já existentes
+    const existingTxs = await this.transactionRepo.find({
+      where: { pluggyTransactionId: In(allPluggyTransactionIds) },
+      select: ['pluggyTransactionId'],
+    });
+    const existingIds = new Set(existingTxs.map((t) => t.pluggyTransactionId));
+
+    // 5. Criar novas transações
+    const newTransactions = allTransactionsFromApi
+      .filter(({ tx }) => !existingIds.has(tx.id))
+      .map(({ tx, account }) =>
+        this.transactionRepo.create({
+          pluggyTransactionId: tx.id,
+          description: tx.description,
+          amount: tx.amount,
+          date: tx.date,
+          type: tx.amount > 0 ? 'INCOME' : 'EXPENSE',
+          category: categoryMap.get(tx.category) || tx.category,
+          itemId,
+          user: { id: userId },
+          account,
+        }),
+      );
+
+    const saved = await this.transactionRepo.save(newTransactions);
+    return saved;
   }
 
   async getIncomesByUser(user: User, filters?: DateFilterDto) {
