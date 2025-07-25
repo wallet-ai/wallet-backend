@@ -3,11 +3,13 @@ import { InvestmentInstitution } from '@entities/Investment-institution';
 import { User } from '@entities/user.entity';
 import { PluggyItemService } from '@modules/pluggy/pluggy-item/pluggy-item.service';
 import { PluggyInvestmentResponse } from '@modules/types/pluggy-investment-response.interface';
-import { Injectable } from '@nestjs/common';
+import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import axios from 'axios';
 import { In, Repository } from 'typeorm';
 import { ApiTokenUtil } from 'utils/getApiTokenUtil';
+import { InvestmentResponseDto } from './dtos/investment-response.dto';
+import { InvestmentAssembler } from './investment.assembler';
 
 @Injectable()
 export class InvestmentService {
@@ -21,12 +23,21 @@ export class InvestmentService {
     private readonly pluggyItemService: PluggyItemService,
   ) {}
 
-  async findAllByUser(userId: number) {
-    // Retorna todos os investimentos do usuário
-  }
+  async findAllByUser(user: User): Promise<InvestmentResponseDto[]> {
+    try {
+      const investments = await this.investmentRepo
+        .createQueryBuilder('investment')
+        .leftJoinAndSelect('investment.institution', 'institution')
+        .leftJoinAndSelect('investment.pluggyItem', 'pluggyItem')
+        .leftJoinAndSelect('pluggyItem.user', 'user')
+        .where('user.id = :userId', { userId: user.id })
+        .orderBy('investment.date', 'DESC')
+        .getMany();
 
-  async findOne(id: string) {
-    // Retorna um investimento específico
+      return InvestmentAssembler.toResponseDtoList(investments);
+    } catch (err) {
+      throw new InternalServerErrorException('Erro ao buscar investimentos.');
+    }
   }
 
   async syncInvestmentsForItem(itemId: string, apiKey: string) {
@@ -38,7 +49,9 @@ export class InvestmentService {
     return response.data?.results || [];
   }
 
-  async syncInvestmentsFromPluggy(user: User): Promise<Investment[]> {
+  async syncInvestmentsFromPluggy(
+    user: User,
+  ): Promise<InvestmentResponseDto[]> {
     console.log(`Syncing investments for user: ${user.id}`);
     const pluggyItems = await this.pluggyItemService.findAllByUser(user);
     const apiKey = await ApiTokenUtil.generatePluggyApiKey();
@@ -95,48 +108,18 @@ export class InvestmentService {
         }
       }
 
-      const mapped = this.investmentRepo.create(
-        newInvestments.map((inv: PluggyInvestmentResponse) => ({
-          name: inv.name,
-          code: inv.code,
-          isin: inv.isin,
-          number: inv.number,
-          owner: inv.owner,
-          currencyCode: inv.currencyCode,
-          type: inv.type,
-          subtype: inv.subtype,
-          lastMonthRate: inv.lastMonthRate,
-          lastTwelveMonthsRate: inv.lastTwelveMonthsRate,
-          annualRate: inv.annualRate,
-          date: inv.date,
-          value: inv.value,
-          quantity: inv.quantity,
-          amount: inv.amount,
-          taxes: inv.taxes,
-          taxes2: inv.taxes2,
-          balance: inv.balance,
-          dueDate: inv.dueDate,
-          rate: inv.rate,
-          rateType: inv.rateType,
-          fixedAnnualRate: inv.fixedAnnualRate,
-          issuer: inv.issuer,
-          issueDate: inv.issueDate,
-          amountProfit: inv.amountProfit,
-          amountWithdrawal: inv.amountWithdrawal,
-          amountOriginal: inv.amountOriginal,
-          status: inv.status,
-          metadata: inv.metadata,
-          providerId: inv.providerId,
+      const entityDataList =
+        InvestmentAssembler.fromPluggyResponseListToEntityData(
+          newInvestments,
           pluggyItem,
-          institution: inv.institution?.number
-            ? institutionMap.get(inv.institution.number)
-            : undefined,
-        })),
-      );
+          institutionMap,
+        );
 
+      const mapped = this.investmentRepo.create(entityDataList);
       allMapped.push(...mapped);
     }
 
-    return await this.investmentRepo.save(allMapped);
+    const savedInvestments = await this.investmentRepo.save(allMapped);
+    return InvestmentAssembler.toResponseDtoList(savedInvestments);
   }
 }
